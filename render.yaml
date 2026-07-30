@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: agentapt-phase0-probe
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: PROBE_LOG_KEY
+        sync: false

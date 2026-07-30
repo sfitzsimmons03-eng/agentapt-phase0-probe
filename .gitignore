@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+
+# Env / secrets
+.env
+.env.local
+
+# OS / editor
+.DS_Store
+*.log
+
+# Local probe dumps (do not commit captures)
+probe-*.json
+*.json.bak
