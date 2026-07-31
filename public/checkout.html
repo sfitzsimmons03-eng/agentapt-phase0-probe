@@ -4,16 +4,18 @@
   <meta charset="utf-8">
   <title>Checkout — Harbour Lane Coffee</title>
   <link rel="icon" href="/favicon.ico">
-  <script src="/probe.js?v=4"></script>
+  <script src="/probe.js?v=5"></script>
 </head>
 <body>
   <h1>Checkout</h1>
   <p>Ethiopia Guji — 250g — $18.00</p>
-  <label>Email <input name="email" type="email" autocomplete="email"></label><br>
-  <label>Full name <input name="name" type="text" autocomplete="name"></label><br>
-  <label>Address <input name="address" type="text" autocomplete="street-address"></label><br>
-  <label>City <input name="city" type="text" autocomplete="address-level2"></label><br>
-  <label>Postcode <input name="postcode" type="text" autocomplete="postal-code"></label><br>
-  <p><button>Continue to payment</button></p>
+  <form id="checkout" autocomplete="on" onsubmit="return false">
+    <label>Email <input name="email" type="email" autocomplete="email"></label><br>
+    <label>Full name <input name="name" type="text" autocomplete="name"></label><br>
+    <label>Address <input name="address" type="text" autocomplete="street-address"></label><br>
+    <label>City <input name="city" type="text" autocomplete="address-level2"></label><br>
+    <label>Postcode <input name="postcode" type="text" autocomplete="postal-code"></label><br>
+    <p><button type="button">Continue to payment</button></p>
+  </form>
 </body>
 </html>
