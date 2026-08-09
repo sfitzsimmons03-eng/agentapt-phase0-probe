@@ -354,30 +354,42 @@
     save();
   }, true);
 
-  /* Form-fill cadence. A human types with jitter and pauses; an agent
-   * commonly lands a complete value in one or very few events. */
-  function watchField(el) {
+  /* Form-fill cadence. Document capture so React/controlled mounts
+   * (inputs appear after DOMContentLoaded) still count. */
+  function fieldRec(el) {
     var name = el.name || el.id || el.type || 'field';
-    var rec = page.fields[name] = { events: 0, firstAt: null, lastAt: null, finalLength: 0, keydowns: 0, pastes: 0, gaps: [] };
-    var prev = null;
-    el.addEventListener('keydown', function () { rec.keydowns++; }, true);
-    el.addEventListener('paste', function () { rec.pastes++; }, true);
-    el.addEventListener('input', function () {
-      var t = Date.now() - T0;
-      rec.events++;
-      if (rec.firstAt === null) rec.firstAt = t;
-      if (prev !== null && rec.gaps.length < 200) rec.gaps.push(t - prev);
-      prev = t;
-      rec.lastAt = t;
-      try { rec.finalLength = String(el.value || '').length; } catch (e) {}
-      save();
-    }, true);
+    if (!page.fields[name]) {
+      page.fields[name] = {
+        events: 0, firstAt: null, lastAt: null, finalLength: 0,
+        keydowns: 0, pastes: 0, gaps: [], _prev: null
+      };
+    }
+    return page.fields[name];
   }
-  addEventListener('DOMContentLoaded', function () {
-    try {
-      document.querySelectorAll('input, textarea, select').forEach(watchField);
-    } catch (e) {}
-  });
+  function isFormControl(el) {
+    return el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName || '');
+  }
+  addEventListener('keydown', function (e) {
+    if (!isFormControl(e.target)) return;
+    fieldRec(e.target).keydowns++;
+  }, true);
+  addEventListener('paste', function (e) {
+    if (!isFormControl(e.target)) return;
+    fieldRec(e.target).pastes++;
+  }, true);
+  addEventListener('input', function (e) {
+    if (!isFormControl(e.target)) return;
+    var el = e.target;
+    var rec = fieldRec(el);
+    var t = Date.now() - T0;
+    rec.events++;
+    if (rec.firstAt === null) rec.firstAt = t;
+    if (rec._prev !== null && rec.gaps.length < 200) rec.gaps.push(t - rec._prev);
+    rec._prev = t;
+    rec.lastAt = t;
+    try { rec.finalLength = String(el.value || '').length; } catch (err) {}
+    save();
+  }, true);
 
   addEventListener('visibilitychange', function () { page.dwellMs = Date.now() - T0; save(); });
   addEventListener('pagehide', function () { page.dwellMs = Date.now() - T0; save(); });

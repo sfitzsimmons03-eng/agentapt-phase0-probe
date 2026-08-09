@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Checkout (controlled) — Harbour Lane Coffee</title>
+  <link rel="icon" href="/favicon.ico">
+  <script src="/probe.js?v=6"></script>
+  <!-- React UMD: controlled components + input masking, same 5 fields as plain checkout. -->
+  <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 28rem; margin: 2rem auto; padding: 0 1rem; }
+    label { display: block; margin-top: 0.75rem; font-size: 0.9rem; }
+    input { width: 100%; box-sizing: border-box; padding: 0.4rem; margin-top: 0.2rem; }
+    button { margin-top: 1.25rem; padding: 0.5rem 1rem; }
+    .hint { color: #666; font-size: 0.8rem; margin-top: 0.25rem; }
+    .arm { background: #f4f4f0; padding: 0.5rem 0.75rem; font-size: 0.85rem; margin-bottom: 1rem; }
+  </style>
+</head>
+<body>
+  <div class="arm">
+    Arm: <strong>controlled + masked</strong> —
+    React controlled inputs; postcode digits-only rewrite on keydown;
+    phone auto-formats. Same five field names as <a href="/checkout.html">plain checkout</a>.
+  </div>
+  <h1>Checkout</h1>
+  <p>Ethiopia Guji — 250g — $18.00</p>
+  <div id="root"></div>
+
+  <script>
+  (function () {
+    var e = React.createElement;
+    var useState = React.useState;
+
+    function digitsOnly(s) { return String(s || '').replace(/\D/g, ''); }
+
+    /* US ZIP: keep at most 5 digits; rewrite value on every change. */
+    function maskZip(raw) {
+      return digitsOnly(raw).slice(0, 5);
+    }
+
+    /* US phone: (XXX) XXX-XXXX while typing; keydown may be intercepted. */
+    function maskPhone(raw) {
+      var d = digitsOnly(raw).slice(0, 10);
+      if (d.length === 0) return '';
+      if (d.length < 4) return '(' + d;
+      if (d.length < 7) return '(' + d.slice(0, 3) + ') ' + d.slice(3);
+      return '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6);
+    }
+
+    function Field(props) {
+      var id = props.id;
+      var label = props.label;
+      var value = props.value;
+      var onChange = props.onChange;
+      var onKeyDown = props.onKeyDown;
+      var autoComplete = props.autoComplete;
+      var inputMode = props.inputMode;
+      var hint = props.hint;
+      return e('label', { htmlFor: id },
+        label,
+        e('input', {
+          id: id,
+          name: id,
+          value: value,
+          onChange: onChange,
+          onKeyDown: onKeyDown,
+          autoComplete: autoComplete,
+          inputMode: inputMode || undefined
+        }),
+        hint ? e('div', { className: 'hint' }, hint) : null
+      );
+    }
+
+    function CheckoutForm() {
+      var _a = useState(''), name = _a[0], setName = _a[1];
+      var _b = useState(''), email = _b[0], setEmail = _b[1];
+      var _c = useState(''), address = _c[0], setAddress = _c[1];
+      var _d = useState(''), city = _d[0], setCity = _d[1];
+      var _e = useState(''), postcode = _e[0], setPostcode = _e[1];
+      var _f = useState(''), phone = _f[0], setPhone = _f[1];
+
+      function onZipKeyDown(ev) {
+        /* Intercept printable non-digit keys (except nav/edit). Mimics
+         * checkout masks that rewrite before the character lands. */
+        if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+        var k = ev.key;
+        if (k.length === 1 && !/[0-9]/.test(k)) {
+          ev.preventDefault();
+        }
+      }
+
+      function onPhoneKeyDown(ev) {
+        if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+        var k = ev.key;
+        if (k.length === 1 && !/[0-9]/.test(k)) {
+          ev.preventDefault();
+        }
+      }
+
+      function submit(ev) {
+        ev.preventDefault();
+        alert('Order placed (probe — no payment).');
+      }
+
+      return e('form', { onSubmit: submit, autoComplete: 'on' },
+        e(Field, {
+          id: 'name', label: 'Full name', value: name,
+          autoComplete: 'name',
+          onChange: function (ev) { setName(ev.target.value); }
+        }),
+        e(Field, {
+          id: 'email', label: 'Email', value: email,
+          autoComplete: 'email',
+          onChange: function (ev) { setEmail(ev.target.value); }
+        }),
+        e(Field, {
+          id: 'address', label: 'Address', value: address,
+          autoComplete: 'street-address',
+          onChange: function (ev) { setAddress(ev.target.value); }
+        }),
+        e(Field, {
+          id: 'city', label: 'City', value: city,
+          autoComplete: 'address-level2',
+          onChange: function (ev) { setCity(ev.target.value); }
+        }),
+        e(Field, {
+          id: 'postcode', label: 'Postcode / ZIP', value: postcode,
+          autoComplete: 'postal-code', inputMode: 'numeric',
+          hint: 'Masked: digits only, max 5 (controlled rewrite).',
+          onKeyDown: onZipKeyDown,
+          onChange: function (ev) { setPostcode(maskZip(ev.target.value)); }
+        }),
+        e(Field, {
+          id: 'phone', label: 'Phone (optional arm)', value: phone,
+          autoComplete: 'tel', inputMode: 'tel',
+          hint: 'Masked: (XXX) XXX-XXXX. Extra field for mask stress; Layer D still uses the five shared names.',
+          onKeyDown: onPhoneKeyDown,
+          onChange: function (ev) { setPhone(maskPhone(ev.target.value)); }
+        }),
+        e('button', { type: 'submit' }, 'Place order')
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(e(CheckoutForm));
+  })();
+  </script>
+</body>
+</html>
