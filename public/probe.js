@@ -361,7 +361,10 @@
     if (!page.fields[name]) {
       page.fields[name] = {
         events: 0, firstAt: null, lastAt: null, finalLength: 0,
-        keydowns: 0, pastes: 0, gaps: [], _prev: null
+        keydowns: 0, pastes: 0, gaps: [], _prev: null,
+        /* Paste survival (mask/controlled may swallow or rewrite). */
+        pasteObserved: false,
+        pasteDetails: []
       };
     }
     return page.fields[name];
@@ -369,13 +372,63 @@
   function isFormControl(el) {
     return el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName || '');
   }
+  function digitsOnly(s) {
+    return String(s || '').replace(/\D/g, '');
+  }
+  function clipText(e) {
+    try {
+      var cd = e.clipboardData || window.clipboardData;
+      if (!cd) return null;
+      return cd.getData('text') || cd.getData('text/plain') || '';
+    } catch (err) {
+      return null;
+    }
+  }
+  function recordPasteOutcome(el, rec, detail, attempt) {
+    try {
+      var landed = String(el.value || '');
+      detail.valueAfter = landed;
+      detail.valueAfterLen = landed.length;
+      detail.exactMatch = detail.clipboard != null && landed === detail.clipboard;
+      detail.digitsMatch =
+        detail.clipboard != null &&
+        digitsOnly(landed).length > 0 &&
+        digitsOnly(landed) === digitsOnly(detail.clipboard);
+      detail.attempt = attempt;
+      /* Keep last outcome on the field for quick table reads. */
+      rec.pasteExactMatch = detail.exactMatch;
+      rec.pasteDigitsMatch = detail.digitsMatch;
+      rec.pasteValueAfter = landed;
+      save();
+    } catch (err) {}
+  }
   addEventListener('keydown', function (e) {
     if (!isFormControl(e.target)) return;
     fieldRec(e.target).keydowns++;
   }, true);
   addEventListener('paste', function (e) {
     if (!isFormControl(e.target)) return;
-    fieldRec(e.target).pastes++;
+    var el = e.target;
+    var rec = fieldRec(el);
+    rec.pastes++;
+    rec.pasteObserved = true;
+    var clip = clipText(e);
+    var detail = {
+      at: Date.now() - T0,
+      clipboard: clip,
+      clipboardLen: clip == null ? null : clip.length,
+      valueBefore: '',
+      valueAfter: null,
+      exactMatch: null,
+      digitsMatch: null,
+      defaultPrevented: !!e.defaultPrevented
+    };
+    try { detail.valueBefore = String(el.value || ''); } catch (err) {}
+    if (rec.pasteDetails.length < 20) rec.pasteDetails.push(detail);
+    /* Masks/controlled often rewrite async after paste; sample twice. */
+    setTimeout(function () { recordPasteOutcome(el, rec, detail, 0); }, 0);
+    setTimeout(function () { recordPasteOutcome(el, rec, detail, 1); }, 50);
+    save();
   }, true);
   addEventListener('input', function (e) {
     if (!isFormControl(e.target)) return;
