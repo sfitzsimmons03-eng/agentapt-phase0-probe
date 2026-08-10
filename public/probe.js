@@ -356,6 +356,10 @@
 
   /* Form-fill cadence. Document capture so React/controlled mounts
    * (inputs appear after DOMContentLoaded) still count. */
+  /* Keydowns within this window after a paste on the same field are
+   * attributed to the paste (mask typing-sim), not counted as user typing. */
+  var PASTE_ATTR_WINDOW_MS = 500;
+
   function fieldRec(el) {
     var name = el.name || el.id || el.type || 'field';
     if (!page.fields[name]) {
@@ -364,7 +368,12 @@
         keydowns: 0, pastes: 0, gaps: [], _prev: null,
         /* Paste survival (mask/controlled may swallow or rewrite). */
         pasteObserved: false,
-        pasteDetails: []
+        pasteDetails: [],
+        lastPasteAt: null,
+        /* Paste-aware keydown accounting. */
+        keydownOffsetsFromPaste: [],
+        keydownsAttributed: 0,
+        keydownsUnattributed: 0
       };
     }
     return page.fields[name];
@@ -404,17 +413,31 @@
   }
   addEventListener('keydown', function (e) {
     if (!isFormControl(e.target)) return;
-    fieldRec(e.target).keydowns++;
+    var rec = fieldRec(e.target);
+    var t = Date.now() - T0;
+    rec.keydowns++;
+    var offset = rec.lastPasteAt == null ? null : (t - rec.lastPasteAt);
+    if (rec.keydownOffsetsFromPaste.length < 200) {
+      rec.keydownOffsetsFromPaste.push(offset);
+    }
+    if (offset != null && offset >= 0 && offset <= PASTE_ATTR_WINDOW_MS) {
+      rec.keydownsAttributed++;
+    } else {
+      rec.keydownsUnattributed++;
+    }
+    save();
   }, true);
   addEventListener('paste', function (e) {
     if (!isFormControl(e.target)) return;
     var el = e.target;
     var rec = fieldRec(el);
+    var t = Date.now() - T0;
     rec.pastes++;
     rec.pasteObserved = true;
+    rec.lastPasteAt = t;
     var clip = clipText(e);
     var detail = {
-      at: Date.now() - T0,
+      at: t,
       clipboard: clip,
       clipboardLen: clip == null ? null : clip.length,
       valueBefore: '',
@@ -425,9 +448,11 @@
     };
     try { detail.valueBefore = String(el.value || ''); } catch (err) {}
     if (rec.pasteDetails.length < 20) rec.pasteDetails.push(detail);
-    /* Masks/controlled often rewrite async after paste; sample twice. */
+    /* Masks/controlled often rewrite async after paste; sample twice.
+     * Typing-sim may still be rewriting at 50ms — also sample late. */
     setTimeout(function () { recordPasteOutcome(el, rec, detail, 0); }, 0);
     setTimeout(function () { recordPasteOutcome(el, rec, detail, 1); }, 50);
+    setTimeout(function () { recordPasteOutcome(el, rec, detail, 2); }, 200);
     save();
   }, true);
   addEventListener('input', function (e) {
