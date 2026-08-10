@@ -2,10 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Checkout (controlled) — Harbour Lane Coffee</title>
+  <title>Checkout (typing-sim mask) — Harbour Lane Coffee</title>
   <link rel="icon" href="/favicon.ico">
   <script src="/probe.js?v=8"></script>
-  <!-- React UMD: controlled components + input masking, same 5 fields as plain checkout. -->
   <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
   <style>
@@ -19,9 +18,12 @@
 </head>
 <body>
   <div class="arm">
-    Arm: <strong>controlled + masked</strong> —
-    React controlled inputs; postcode digits-only rewrite on keydown;
-    phone auto-formats. Same five field names as <a href="/checkout.html">plain checkout</a>.
+    Arm: <strong>typing-sim mask</strong> —
+    On paste for postcode/phone: preventDefault, then rebuild value
+    character-by-character with synthetic keydown + input (phone-input
+    library pattern). Same five shared names as
+    <a href="/checkout.html">plain</a> /
+    <a href="/checkout-controlled.html">controlled</a>.
   </div>
   <h1>Checkout</h1>
   <p>Ethiopia Guji — 250g — $18.00</p>
@@ -31,15 +33,14 @@
   (function () {
     var e = React.createElement;
     var useState = React.useState;
+    var useRef = React.useRef;
 
     function digitsOnly(s) { return String(s || '').replace(/\D/g, ''); }
 
-    /* US ZIP: keep at most 5 digits; rewrite value on every change. */
     function maskZip(raw) {
       return digitsOnly(raw).slice(0, 5);
     }
 
-    /* US phone: (XXX) XXX-XXXX while typing; keydown may be intercepted. */
     function maskPhone(raw) {
       var d = digitsOnly(raw).slice(0, 10);
       if (d.length === 0) return '';
@@ -48,27 +49,56 @@
       return '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6);
     }
 
+    /*
+     * Failure mode under test: some phone/ZIP libs swallow paste and
+     * "type" each character so formatters run. That manufactures
+     * keydowns from an agent paste — Layer D false negative risk.
+     */
+    function simulateTyping(el, text, applyMask, setValue, done) {
+      var i = 0;
+      var acc = '';
+      function step() {
+        if (i >= text.length) {
+          if (done) done();
+          return;
+        }
+        var ch = text.charAt(i++);
+        try {
+          el.dispatchEvent(new KeyboardEvent('keydown', {
+            key: ch, code: 'Key' + ch.toUpperCase(), bubbles: true, cancelable: true
+          }));
+        } catch (err) {}
+        acc += ch;
+        var next = applyMask(acc);
+        setValue(next);
+        acc = digitsOnly(next) || next;
+        try {
+          el.dispatchEvent(new InputEvent('input', {
+            data: ch, inputType: 'insertText', bubbles: true
+          }));
+        } catch (err) {
+          try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e2) {}
+        }
+        setTimeout(step, 0);
+      }
+      step();
+    }
+
     function Field(props) {
-      var id = props.id;
-      var label = props.label;
-      var value = props.value;
-      var onChange = props.onChange;
-      var onKeyDown = props.onKeyDown;
-      var autoComplete = props.autoComplete;
-      var inputMode = props.inputMode;
-      var hint = props.hint;
-      return e('label', { htmlFor: id },
-        label,
+      return e('label', { htmlFor: props.id },
+        props.label,
         e('input', {
-          id: id,
-          name: id,
-          value: value,
-          onChange: onChange,
-          onKeyDown: onKeyDown,
-          autoComplete: autoComplete,
-          inputMode: inputMode || undefined
+          id: props.id,
+          name: props.id,
+          ref: props.inputRef,
+          value: props.value,
+          onChange: props.onChange,
+          onPaste: props.onPaste,
+          onKeyDown: props.onKeyDown,
+          autoComplete: props.autoComplete,
+          inputMode: props.inputMode || undefined
         }),
-        hint ? e('div', { className: 'hint' }, hint) : null
+        props.hint ? e('div', { className: 'hint' }, props.hint) : null
       );
     }
 
@@ -79,23 +109,43 @@
       var _d = useState(''), city = _d[0], setCity = _d[1];
       var _e = useState(''), postcode = _e[0], setPostcode = _e[1];
       var _f = useState(''), phone = _f[0], setPhone = _f[1];
+      var zipRef = useRef(null);
+      var phoneRef = useRef(null);
 
       function onZipKeyDown(ev) {
-        /* Intercept printable non-digit keys (except nav/edit). Mimics
-         * checkout masks that rewrite before the character lands. */
         if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
         var k = ev.key;
-        if (k.length === 1 && !/[0-9]/.test(k)) {
-          ev.preventDefault();
-        }
+        if (k.length === 1 && !/[0-9]/.test(k)) ev.preventDefault();
       }
 
       function onPhoneKeyDown(ev) {
         if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
         var k = ev.key;
-        if (k.length === 1 && !/[0-9]/.test(k)) {
-          ev.preventDefault();
-        }
+        if (k.length === 1 && !/[0-9]/.test(k)) ev.preventDefault();
+      }
+
+      function onZipPaste(ev) {
+        ev.preventDefault();
+        var clip = '';
+        try {
+          clip = (ev.clipboardData || window.clipboardData).getData('text') || '';
+        } catch (err) {}
+        var el = zipRef.current;
+        if (!el) return;
+        setPostcode('');
+        simulateTyping(el, digitsOnly(clip).slice(0, 5), maskZip, setPostcode);
+      }
+
+      function onPhonePaste(ev) {
+        ev.preventDefault();
+        var clip = '';
+        try {
+          clip = (ev.clipboardData || window.clipboardData).getData('text') || '';
+        } catch (err) {}
+        var el = phoneRef.current;
+        if (!el) return;
+        setPhone('');
+        simulateTyping(el, digitsOnly(clip).slice(0, 10), maskPhone, setPhone);
       }
 
       function submit(ev) {
@@ -127,15 +177,19 @@
         e(Field, {
           id: 'postcode', label: 'Postcode / ZIP', value: postcode,
           autoComplete: 'postal-code', inputMode: 'numeric',
-          hint: 'Masked: digits only, max 5 (controlled rewrite).',
+          inputRef: zipRef,
+          hint: 'Typing-sim: paste preventDefault → synthetic keydown per digit.',
           onKeyDown: onZipKeyDown,
+          onPaste: onZipPaste,
           onChange: function (ev) { setPostcode(maskZip(ev.target.value)); }
         }),
         e(Field, {
-          id: 'phone', label: 'Phone (optional arm)', value: phone,
+          id: 'phone', label: 'Phone (typing-sim arm)', value: phone,
           autoComplete: 'tel', inputMode: 'tel',
-          hint: 'Masked: (XXX) XXX-XXXX. Extra field for mask stress; Layer D still uses the five shared names.',
+          inputRef: phoneRef,
+          hint: 'Typing-sim: paste → char-by-char keydowns + format. Extra field; Layer D uses five shared names.',
           onKeyDown: onPhoneKeyDown,
+          onPaste: onPhonePaste,
           onChange: function (ev) { setPhone(maskPhone(ev.target.value)); }
         }),
         e('button', { type: 'submit' }, 'Place order')
