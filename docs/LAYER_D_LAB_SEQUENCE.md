@@ -30,6 +30,15 @@ sum(keydownsUnattributed) across those fields <= 3
 
 Shared fields on Harbour Lane: `name`, `email`, `address`, `city`, `postcode`.
 
+**Measured vs precautionary (read before building on this rule):**
+
+Both tolerances in the decision block are **insurance**, not lab-validated slack. The data supports a sharper rule; the caps are kept for margin.
+
+| Parameter | What the arms show | What the rule says | Status |
+|-----------|-------------------|-------------------|--------|
+| Unattributed keydowns | Every Comet arm **exactly 0**. Nearest negative: autofill at **5**. Nothing has ever landed at 1, 2, or 3. | `<= 3` | **Precautionary, unmeasured** — leftover from the raw-total era before attribution. The measured gap is 0 → 5. If a future run lands at 1 or 2, treat it as a **surprise worth investigating**, not as the rule working as designed. |
+| Paste field count | Every arm is **5/5 or 0/5**. Nothing has produced 3 or 4. | `>= 4 of 5` | **Untested tolerance** — insurance against a partial-paste case we have never observed. Fine to keep; do not read it as validated partial-paste behaviour. |
+
 **Why this shape (not “raise the keydown cap”):**
 
 - A masked ZIP that rebuilds paste char-by-char manufactures keydowns *after* paste. Raising `≤3` → `≤12` fixes one mask and dies on the next. Attribution measures the mask, not the agent.
@@ -157,3 +166,5 @@ Retrieval: `__probeSave('tag')` / `__probeReset()` before clean arms. Prefer fre
 5. Install: theme embed / page script only — not a Shopify web pixel.
 
 **Do not:** raise raw keydown caps to swallow masks; treat Maccy/⌘V as the residual FP (it is not); start collector before this writeup is accepted as the detection contract.
+
+**Tolerances (§1):** `>= 4 of 5` and `<= 3` unattributed are precautionary caps — measured Comet is 5/5 paste and 0 unattr; nearest failure is 5 unattr. See §1 table before interpreting slack as observed behaviour.
