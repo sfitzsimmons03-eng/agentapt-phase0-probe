@@ -168,3 +168,27 @@ Retrieval: `__probeSave('tag')` / `__probeReset()` before clean arms. Prefer fre
 **Do not:** raise raw keydown caps to swallow masks; treat Maccy/⌘V as the residual FP (it is not); start collector before this writeup is accepted as the detection contract.
 
 **Tolerances (§1):** `>= 4 of 5` and `<= 3` unattributed are precautionary caps — measured Comet is 5/5 paste and 0 unattr; nearest failure is 5 unattr. See §1 table before interpreting slack as observed behaviour.
+
+---
+
+## 8. Watch list (not queued)
+
+Items to track so they do not surprise us after the collector is built. **Do not reprioritise** lab or collector work for these.
+
+### Cloudflare Kitesurf (2026)
+
+**What:** Cloudflare’s cloud browser for AI agents, running on Workers. Not Chromium — custom stack (Blitz rendering, Stylo CSS, Boa JS), explicitly not focused on visual fidelity.  
+**Ref:** https://blog.cloudflare.com/kitesurf/
+
+**Why Layer D cares:** The paste-vs-type signature was calibrated entirely on **Comet (Chromium)**. Kitesurf may behave differently — paste like Comet, set `.value` directly with no observable events, or skip `paste` entirely. If the last case, that is a **false negative** on a browser built for exactly the traffic we are measuring.
+
+**When Browser Run beta is reachable:** one probe arm — same Harbour Lane checkout pages and instrumentation as Comet (plain → controlled → typing-sim as needed). No new harness.
+
+**Also capture on that arm (Layer A):**
+
+- Does it declare itself in the User-Agent?
+- Does it respect `robots.txt`?
+
+Would be the first real declared-agent sample on non-OpenAI infrastructure; we still have no OpenAI-cloud Comet data (local Playwright only for one arm historically).
+
+**Status:** Watch list only. Layer D closed on rule shape; collector parked until sequencing allows.
