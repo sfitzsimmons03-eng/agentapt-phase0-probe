@@ -215,9 +215,21 @@ Under session-level rule this arm is **not-agent** (sessionDisqualified=true).
 
 **Pointer health (Claude item 4):** answered from the macOS human arm — holds present, only `button===2` empty. Safe to trust iOS pointer traces.
 
-**Arm E (pending):** mixed-method human — context-menu paste on **one** field, ⌘V on the other four. Tests session-level: expect exactly 1 field disqualified, session not-agent; also records whether 4×⌘V unattr stays ≤3 (if yes, disqualifier is the only thing stopping an agent verdict).
+**Arm E (done 2026-08-12):** mixed-method human — context-menu paste on **one** field (`postcode`), ⌘V on the other four.
 
-**Not run / deferred:** Arm E mixed-method, programmatic-paste extension PWM (4a), Android / Windows (Fitz), Kitesurf (§8), collector / `beacon.js` (testers first).
+| Signal | Result |
+|--------|--------|
+| paste | **5/5** |
+| unattributed keydowns | **10** (⌘V fields ~2–3 each; postcode 0) |
+| disqualified fields | **1/5** (`postcode` / `contextmenu`, menu→paste 1367 ms) |
+| `sessionDisqualified` | **true** |
+| `necessaryPass` | **false** (unattr 10 > 3) |
+| `layerD.verdict` | `not-agent-necessary-fail` |
+| fill span | ~11062 ms |
+
+**Read:** four ⌘V pastes do **not** stay under `unattr <= 3`. The necessary gate already catches this shape. Session-level disqualifier still fired (1 hit) — **belt-and-braces**, not the sole separator. The hypothetical “necessary passes + only one disqualifier stands between human and agent” case did **not** appear on this arm.
+
+**Not run / deferred:** programmatic-paste extension PWM (4a), Android / Windows (Fitz), Kitesurf (§8), collector / `beacon.js` (testers first).
 
 ### iOS long-press paste (2026-08-12, Safari iPhone)
 
