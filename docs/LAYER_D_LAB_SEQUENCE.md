@@ -202,7 +202,29 @@ State explicitly. Do not pretend the rule covers them.
 
 **Comet pointerHolds:** dwell ~0–2 ms (focus clicks). Human holds on context-menu arm ~83–116 ms. Raw only; no hold rule.
 
-**Not run / deferred:** programmatic-paste extension PWM (4a), **iOS long-press** (next on Antonello iPhone), Android / Windows (Fitz), Kitesurf (§8), collector / `beacon.js` (testers first).
+**Not run / deferred:** programmatic-paste extension PWM (4a), Android / Windows (Fitz), Kitesurf (§8), collector / `beacon.js` (testers first).
+
+### iOS long-press paste (2026-08-12, Safari iPhone)
+
+UA: iPhone OS 18_7 / AppleWebKit — plain `/checkout.html`.
+
+| Signal | Result |
+|--------|--------|
+| paste | **5/5** |
+| unattr keydowns | **0** |
+| contextmenu | **0** (WebKit — as expected) |
+| pointerDownRight (button===2) | **0** |
+| pasteDisqualified | **0/5** |
+| fill span | ~14203 ms |
+| Verdict under current rule | **INCONCLUSIVE** (necessary pass, no disqualifier) |
+
+**Raw `pointerHolds` (the reason item 3 exists):** every shared field shows **two** touch holds — a short tap (~74–180 ms) then a long press (~842–1079 ms, median long ~925–938). Long-press `pointerup` ends ~940–1045 ms before the paste. `pointerType: touch`, `button: 0`, `trusted: true`.
+
+Compare Comet v10 holds on the same fields: dwell **~0–2 ms** (focus clicks only).
+
+**Read:** desktop/Android-style contextmenu disqualifier does **not** catch iOS. The long-touch dwell before paste is a real, measurable separator in this one sample — still a **hypothesis for a future rule**, not a shipped gate. Do not promote hold-duration to primary without more traces (and confirm it does not false-positive on slow human taps).
+
+Note: clipboard values in this run were the probe version-check snippet pasted into every field — fine for event signature, ignore content.
 
 ---
 
