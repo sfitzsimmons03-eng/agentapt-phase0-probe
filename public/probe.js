@@ -359,6 +359,9 @@
   /* Keydowns within this window after a paste on the same field are
    * attributed to the paste (mask typing-sim), not counted as user typing. */
   var PASTE_ATTR_WINDOW_MS = 500;
+  /* Human context-menu / right-click lookback before paste.
+   * Named constant — tune from data later, not by argument. */
+  var PASTE_CONTEXT_LOOKBACK_MS = 2000;
 
   function fieldRec(el) {
     var name = el.name || el.id || el.type || 'field';
@@ -373,7 +376,14 @@
         /* Paste-aware keydown accounting. */
         keydownOffsetsFromPaste: [],
         keydownsAttributed: 0,
-        keydownsUnattributed: 0
+        keydownsUnattributed: 0,
+        /* Context-menu / right-click disqualifier + raw pointer hold. */
+        contextMenus: [],
+        pointerDownRight: [],
+        pointerHolds: [],
+        openPointerDowns: [],
+        pasteDisqualified: false,
+        pasteDisqualifyReasons: []
       };
     }
     return page.fields[name];
@@ -391,6 +401,36 @@
       return cd.getData('text') || cd.getData('text/plain') || '';
     } catch (err) {
       return null;
+    }
+  }
+  function anyInLookback(list, pasteAt, windowMs) {
+    var i;
+    for (i = 0; i < list.length; i++) {
+      var at = list[i] && list[i].at;
+      if (at == null) continue;
+      if (at <= pasteAt && (pasteAt - at) <= windowMs) return list[i];
+    }
+    return null;
+  }
+  function attachPasteDisqualify(rec, detail, pasteAt) {
+    var hitMenu = anyInLookback(rec.contextMenus || [], pasteAt, PASTE_CONTEXT_LOOKBACK_MS);
+    var hitRight = anyInLookback(rec.pointerDownRight || [], pasteAt, PASTE_CONTEXT_LOOKBACK_MS);
+    detail.contextMenuBefore = !!hitMenu;
+    detail.pointerRightBefore = !!hitRight;
+    detail.contextMenuOffsetMs = hitMenu ? (pasteAt - hitMenu.at) : null;
+    detail.pointerRightOffsetMs = hitRight ? (pasteAt - hitRight.at) : null;
+    detail.disqualified = !!(hitMenu || hitRight);
+    detail.disqualifyReasons = [];
+    if (hitMenu) detail.disqualifyReasons.push('contextmenu');
+    if (hitRight) detail.disqualifyReasons.push('pointerdown-button-2');
+    if (detail.disqualified) {
+      rec.pasteDisqualified = true;
+      if (hitMenu && rec.pasteDisqualifyReasons.indexOf('contextmenu') < 0) {
+        rec.pasteDisqualifyReasons.push('contextmenu');
+      }
+      if (hitRight && rec.pasteDisqualifyReasons.indexOf('pointerdown-button-2') < 0) {
+        rec.pasteDisqualifyReasons.push('pointerdown-button-2');
+      }
     }
   }
   function recordPasteOutcome(el, rec, detail, attempt) {
@@ -411,6 +451,65 @@
       save();
     } catch (err) {}
   }
+  addEventListener('contextmenu', function (e) {
+    if (!isFormControl(e.target)) return;
+    var rec = fieldRec(e.target);
+    var t = Date.now() - T0;
+    if (rec.contextMenus.length < 40) {
+      rec.contextMenus.push({
+        at: t,
+        trusted: !!e.isTrusted,
+        button: e.button
+      });
+    }
+    save();
+  }, true);
+  addEventListener('pointerdown', function (e) {
+    if (!isFormControl(e.target)) return;
+    var rec = fieldRec(e.target);
+    var t = Date.now() - T0;
+    var ptr = {
+      at: t,
+      button: e.button,
+      pointerType: e.pointerType || null,
+      pointerId: e.pointerId,
+      trusted: !!e.isTrusted
+    };
+    if (e.button === 2) {
+      if (rec.pointerDownRight.length < 40) rec.pointerDownRight.push(ptr);
+    }
+    /* Raw hold capture for iOS long-press hypothesis — no consumer yet. */
+    if (rec.openPointerDowns.length < 20) rec.openPointerDowns.push(ptr);
+    save();
+  }, true);
+  addEventListener('pointerup', function (e) {
+    if (!isFormControl(e.target)) return;
+    var rec = fieldRec(e.target);
+    var t = Date.now() - T0;
+    var open = rec.openPointerDowns || [];
+    var matchIdx = -1;
+    var i;
+    for (i = open.length - 1; i >= 0; i--) {
+      if (open[i].pointerId === e.pointerId || (open[i].button === e.button && open[i].pointerId == null)) {
+        matchIdx = i;
+        break;
+      }
+    }
+    if (matchIdx < 0 && open.length) matchIdx = open.length - 1;
+    if (matchIdx < 0) return;
+    var down = open.splice(matchIdx, 1)[0];
+    if (rec.pointerHolds.length < 80) {
+      rec.pointerHolds.push({
+        downAt: down.at,
+        upAt: t,
+        dwellMs: t - down.at,
+        button: down.button,
+        pointerType: down.pointerType || e.pointerType || null,
+        trusted: !!e.isTrusted
+      });
+    }
+    save();
+  }, true);
   addEventListener('keydown', function (e) {
     if (!isFormControl(e.target)) return;
     var rec = fieldRec(e.target);
@@ -444,9 +543,16 @@
       valueAfter: null,
       exactMatch: null,
       digitsMatch: null,
-      defaultPrevented: !!e.defaultPrevented
+      defaultPrevented: !!e.defaultPrevented,
+      contextMenuBefore: false,
+      pointerRightBefore: false,
+      contextMenuOffsetMs: null,
+      pointerRightOffsetMs: null,
+      disqualified: false,
+      disqualifyReasons: []
     };
     try { detail.valueBefore = String(el.value || ''); } catch (err) {}
+    attachPasteDisqualify(rec, detail, t);
     if (rec.pasteDetails.length < 20) rec.pasteDetails.push(detail);
     /* Masks/controlled often rewrite async after paste; sample twice.
      * Typing-sim may still be rewriting at 50ms — also sample late. */

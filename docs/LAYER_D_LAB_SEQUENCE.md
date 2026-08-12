@@ -1,9 +1,9 @@
 # Layer D — Lab sequence (form-fill signature)
 
-**Status:** Lab closed for rule shape. Collector not started.  
+**Status:** Lab open for context-menu disqualifier capture; collector still parked.  
 **Harness:** [agentapt-phase0-probe](https://github.com/sfitzsimmons03-eng/agentapt-phase0-probe) · live `https://probe.agentapt.tech`  
-**Probe:** `probe.js` v9+ (paste survival + paste-aware keydown attribution)  
-**Date:** 2026-08-10  
+**Probe:** `probe.js` v10+ (paste survival + paste-aware keydown attribution + context-menu / pointer disqualifier capture)  
+**Date:** 2026-08-12  
 **Scope:** Behavioural fill detection only (Layer D). Layers A/B/C out of scope here.
 
 This document is the evidence base for a detection-layer ticket. Write the ticket against these numbers and bounds — not against a re-tuned threshold.
@@ -23,10 +23,24 @@ This document is the evidence base for a detection-layer ticket. Write the ticke
 **Decision (draft, for ticket):**
 
 ```
-paste_fields >= 4 of 5 shared checkout fields
-AND
-sum(keydownsUnattributed) across those fields <= 3
+NECESSARY (not sufficient):
+  paste_fields >= 4 of 5 shared checkout fields
+  AND
+  sum(keydownsUnattributed) across those fields <= 3
+
+DISQUALIFIER (structural, per paste field):
+  if contextmenu OR pointerdown(button===2) landed on the same field
+  within PASTE_CONTEXT_LOOKBACK_MS (2000) before that paste
+  → that field is disqualified as agent evidence
+
+VERDICT:
+  necessary fails            → not agent (manual / autofill / Bitwarden / ⌘V-class)
+  necessary passes + any shared field disqualified → not agent (human context-menu)
+  necessary passes + no disqualifier evidence      → INCONCLUSIVE
+                                                   (do NOT claim agent-detected)
 ```
+
+Absence of a disqualifier draws **no positive conclusion**. Corroborators may upgrade a verdict later; their absence must never assert one. Product rule: a false positive that tells a merchant “an AI agent filled your checkout” when it was a person (especially iPhone) is a hard line we do not cross.
 
 Shared fields on Harbour Lane: `name`, `email`, `address`, `city`, `postcode`.
 
@@ -38,19 +52,23 @@ Both tolerances in the decision block are **insurance**, not lab-validated slack
 
 | Parameter | What the arms show | What the rule says | Status |
 |-----------|-------------------|-------------------|--------|
-| Unattributed keydowns | Every Comet arm **exactly 0**. Nearest negative: autofill at **5**. Nothing has ever landed at 1, 2, or 3. | `<= 3` | **Precautionary, unmeasured** — leftover from the raw-total era before attribution. The measured gap is 0 → 5. If a future run lands at 1 or 2, treat it as a **surprise worth investigating**, not as the rule working as designed. |
+| Unattributed keydowns | Every Comet arm **exactly 0**. Nearest *keydown* negative: autofill at **5**. Human context-menu paste also lands at **0** — so `<= 3` does **not** separate that class at all. Zero against zero. | `<= 3` | **Precautionary for keydown classes; useless against context-menu paste.** Leftover from the raw-total era. If a future run lands at 1 or 2, treat it as a surprise worth investigating. |
 | Paste field count | Every arm is **5/5 or 0/5**. Nothing has produced 3 or 4. | `>= 4 of 5` | **Untested tolerance** — insurance against a partial-paste case we have never observed. Fine to keep; do not read it as validated partial-paste behaviour. |
 | Paste-attribution window | Typing-sim attributed fully to zero unattributed keydowns. We did **not** measure the full offset distribution or the observed maximum across all attributed keydowns. | `[0, 500ms]` | **Precautionary, partially measured** — we know 500ms was sufficient for the typing-sim arm, not that it is tight. Record observed maxima on future runs before treating this as a calibrated boundary. |
+| Context-menu lookback | Not yet measured under v10 capture. | `PASTE_CONTEXT_LOOKBACK_MS = 2000` | **Named constant, unmeasured** — tune from data after arms A/B, not by argument. |
 
-**Why this shape (not “raise the keydown cap”):**
+**Why this shape (not “raise the keydown cap”, and not “move primary onto fill span”):**
 
 - A masked ZIP that rebuilds paste char-by-char manufactures keydowns *after* paste. Raising `≤3` → `≤12` fixes one mask and dies on the next. Attribution measures the mask, not the agent.
 - Keyboard clipboard fill (⌘V / Maccy) manufactures keydowns *before* paste. Those cannot attribute to a paste that has not fired yet. Same instrumentation separates that class for free.
 - Comet has no keyboard involvement: paste without preceding shortcut keydowns → unattributed ≈ 0.
+- Human context-menu paste (right-click → Paste) also lands paste 5/5 / unattr 0. Fill span is continuous and fragile (one human sample; overlaps under slow network / heavier checkout). **Do not move the primary gate onto fill span.** Keep paste+unattr as necessary conditions; add a **structural disqualifier** (contextmenu / button===2 before paste). Absence → INCONCLUSIVE, never agent-detected.
 
-**Corroboration only (do not promote to primary):** fill span ~1.1–1.4s and ~5 INPUT clicks on Comet. Timing alone is fragile and should not become the primary gate. Its specific job is narrower: it separates Comet from **human clipboard paste** classes that can match the primary signal (`paste 5/5`, unattributed `0`, ~5 clicks) while still taking materially longer.
+**Corroboration only (never primary, never asserts alone):** fill span ~1.1–1.4s and ~5 INPUT clicks on Comet. Timing alone is fragile. Pointer-hold traces (`pointerHolds` dwellMs) are captured raw for a possible iOS long-press separator later — **no consumer yet; do not invent a rule from them.**
 
 **Paste survival instrumentation (kept):** per-field `pasteObserved`, clipboard vs landed `exactMatch` / `digitsMatch` (sample after mask rewrite). Masks that format (phone) correctly show exactMatch false + digitsMatch true.
+
+**Context-menu / pointer capture (v10):** per field — `contextMenus[]`, `pointerDownRight[]` (button===2), `pointerHolds[]` (down/up dwellMs). On each paste, flag `disqualified` if either menu or right-button down landed within `PASTE_CONTEXT_LOOKBACK_MS` before it.
 
 ---
 
@@ -88,31 +106,32 @@ Intermittent Comet plain with postcode `keydown=1` + paste: reconstructs to unat
 
 ---
 
-## 3. Negative arms (must not fire)
+## 3. Negative arms (must not fire as agent)
 
-| Arm | paste | raw kd | unattr | fill span | Rule |
-|-----|------:|-------:|-------:|----------:|:----:|
-| Manual typing | 0/5 | 49 | **49** | ~6670 ms | fail |
-| Chrome autofill | 0/5 | 5 | **5** | ~1 ms | fail |
-| Bitwarden (inject) | 0/5 | ~16 | **~16** | ~273 ms | fail |
-| Maccy / ⌘V clipboard | 5/5 | 11 | **11** | ~5674 ms | fail |
-| Human right-click / long-press paste | not run | expected 0 | expected 0 | expected slower than Comet | **known untested gap** |
+| Arm | paste | raw kd | unattr | fill span | Necessary | Notes |
+|-----|------:|-------:|-------:|----------:|:---------:|-------|
+| Manual typing | 0/5 | 49 | **49** | ~6670 ms | fail | — |
+| Chrome autofill | 0/5 | 5 | **5** | ~1 ms | fail | — |
+| Bitwarden (inject) | 0/5 | ~16 | **~16** | ~273 ms | fail | — |
+| Maccy / ⌘V clipboard | 5/5 | 11 | **11** | ~5674 ms | fail | pre-paste shortcut keydowns |
+| Human right-click → Paste (2026-08-12) | **5/5** | **0** | **0** | **~11687 ms** | **pass** | necessary conditions do not separate; disqualifier pending v10 re-run |
 
 ### Maccy mechanism (2026-08-10)
 
-Paste 5/5, exactMatch true. Per-field keydown offsets were `null` (keydown before `lastPasteAt`). Typical ⌘V: Meta/V fire, then `paste`. Unattributed 11 → rule fails.
+Paste 5/5, exactMatch true. Per-field keydown offsets were `null` (keydown before `lastPasteAt`). Typical ⌘V: Meta/V fire, then `paste`. Unattributed 11 → necessary conditions fail.
 
 Structural, not tuned: Comet never fires those shortcut keydowns.
 
-### Human clipboard paste gap
+### Human context-menu paste (2026-08-12, pre-disqualifier capture)
 
-We did **not** run the ordinary human paste path: click/tap into a field, then context-menu **Paste** (desktop right-click or mobile long-press). That path can fire a `paste` event with no keyboard events at all, which means:
+Desktop right-click → Paste on plain checkout:
 
-- `paste 5/5`
-- `keydownsUnattributed 0`
-- INPUT clicks roughly in the Comet range
+- paste 5/5, unattributed 0, raw keydowns 0
+- fill span ~11.7s
 
-That makes it the most common untested false-positive class in the current lab sequence. The likely separator is **fill span**, not the primary gate. Keep this explicit until a desktop right-click and mobile long-press arm are run.
+**Necessary conditions pass.** That is a gate problem, not noise. We do **not** fix it by promoting fill span to primary (continuous, one human sample, will overlap under slow agents / heavier pages). Fix is a **structural disqualifier**: `contextmenu` / `pointerdown(button===2)` in the lookback before paste on the same field. Until that capture is confirmed on a re-run, paste+unattr alone must read **INCONCLUSIVE**, not agent-detected.
+
+Android long-press is expected to fire `contextmenu` (disqualifier should catch it). iOS Safari / Chrome-on-iOS does **not** fire `contextmenu` on long-press (WebKit). That class stays open; `pointerHolds` raw capture exists for a later look — no rule yet.
 
 ---
 
@@ -130,15 +149,17 @@ State explicitly. Do not pretend the rule covers them.
 
 **Bound:** extension-based or API managers that synthesize paste without keyboard. Known, bounded. Do not chase before collector; ticket should list as accepted FP class or as a follow-up arm.
 
-### 4b. False positive — human context-menu paste
+### 4b. False positive — human context-menu paste (desktop)
 
-**Shape:** a real person clicks/taps into each field and pastes from the context menu (desktop right-click or mobile long-press), so the page sees `paste` with no keyboard shortcut before it.
+**Shape:** person clicks into each field and pastes via context menu (right-click → Paste). Fires `paste` with no keyboard shortcut.
 
-**Why it matches:** same primary signature as Comet is plausible — paste on every field, unattributed keydowns at 0, and click count in the same rough band. The likely differentiator is slower fill span.
+**Why necessary conditions match:** measured 2026-08-12 — paste 5/5, unattr 0. Zero against zero with Comet on the keydown gate.
 
-**What we tested that is *not* this class:** Maccy / ⌘V keyboard clipboard, which fails because the shortcut keydowns happen before paste.
+**Mitigation (in progress, v10):** structural disqualifier — `contextmenu` or `pointerdown(button===2)` within `PASTE_CONTEXT_LOOKBACK_MS` before paste on the same field → field disqualified as agent evidence. Absence of disqualifier ⇒ INCONCLUSIVE, not agent.
 
-**Bound:** common in real user behavior, especially on mobile. Still unmeasured in this sequence; ticket should call it out as an open false-positive class unless/until a dedicated arm is run.
+**What we tested that is *not* this class:** Maccy / ⌘V keyboard clipboard (fails necessary conditions via pre-paste keydowns).
+
+**Still open:** iOS long-press paste (no `contextmenu` in WebKit). Capture `pointerHolds` raw; do not write a hold-duration rule until a real iPhone trace exists. Android long-press expected to fire `contextmenu` — confirm when Fitz runs it.
 
 ### 4c. False negative — agent that types instead of pastes
 
@@ -152,6 +173,7 @@ State explicitly. Do not pretend the rule covers them.
 
 - **Shopify web pixel:** no `document` → cannot run Layer D at all. Theme app embed (or equivalent page script) is the install path. Desk research; not an arm.
 - **Layers A/B/C:** UA grep / Atlas favicon / Comet DOM inject — separate verdicts; not part of this sequence.
+- **Windows arms (Fitz):** Ctrl+V, context-menu key, Win+V clipboard history — zero data; same v10 capture covers them. Do not run device arms until capture ships.
 
 ---
 
@@ -162,9 +184,10 @@ State explicitly. Do not pretend the rule covers them.
 3. Typing-sim mask (paste → char-by-char synthetic keydowns) — false-negative risk for raw totals.
 4. Paste-aware instrumentation + back-test on existing arms (Comet ×3, manual, autofill, Bitwarden).
 5. Keyboard clipboard-fill (Maccy) — pre-paste keydown lookalike; cleared under paste-aware rule.
-6. Human context-menu paste — **not run**; left explicit as the most common open false-positive class.
+6. Human context-menu paste (desktop right-click) — necessary conditions pass (5/5, unattr 0); fill span ~11.7s. Gate problem confirmed.
+7. **Next (after v10 ship):** re-run context-menu arm (expect disqualifier on all 5) + ≥2 Comet arms (expect zero contextmenu / zero button===2). Device arms only after that.
 
-**Not run / deferred:** programmatic-paste extension PWM (residual 4a), human context-menu paste / mobile long-press paste (residual 4b), Kitesurf arm (§8), collector / `beacon.js` (sequencing: testers first on AgentApt side).
+**Not run / deferred:** programmatic-paste extension PWM (4a), iOS long-press (4b open), Android / Windows (Fitz), Kitesurf (§8), collector / `beacon.js` (testers first).
 
 ---
 
@@ -176,7 +199,7 @@ State explicitly. Do not pretend the rule covers them.
 | https://probe.agentapt.tech/checkout-controlled.html | React controlled + ZIP/phone rewrite |
 | https://probe.agentapt.tech/checkout-typing-sim.html | Paste → synthetic per-char keydowns |
 
-Retrieval: `__probeSave('tag')` / `__probeReset()` before clean arms. Prefer fresh session; sessionStorage accumulates historical pages.
+Retrieval: `__probeSave('tag')` / `__probeReset()` before clean arms. Prefer fresh session; sessionStorage accumulates historical pages. Confirm `probe.js?v=10` before disqualifier arms.
 
 ---
 
@@ -184,16 +207,17 @@ Retrieval: `__probeSave('tag')` / `__probeReset()` before clean arms. Prefer fre
 
 **Ship Layer D as page-tag behavioural fill detection** with:
 
-1. Paste presence on ≥4 of 5 address fields as primary.
-2. Unattributed keydown sum (paste-window attribution, 500ms) as the keydown gate — not raw keydown totals.
-3. Documented FP: programmatic paste with no keystrokes.
-4. Documented FP: human context-menu paste (desktop/mobile) pending dedicated arm.
-5. Documented FN: agents that type instead of paste.
-6. Install: theme embed / page script only — not a Shopify web pixel.
+1. Paste presence on ≥4 of 5 address fields as a **necessary** condition (not sufficient).
+2. Unattributed keydown sum (paste-window attribution, 500ms) as a **necessary** keydown gate — not raw totals.
+3. Structural **disqualifier**: contextmenu / pointerdown(button===2) within lookback before paste on the same field → not agent.
+4. Necessary pass + no disqualifier evidence → **INCONCLUSIVE** (never assert agent-detected from silence).
+5. Documented FP residual: programmatic paste with no keystrokes; iOS long-press until pointer-hold evidence exists.
+6. Documented FN: agents that type instead of paste.
+7. Install: theme embed / page script only — not a Shopify web pixel.
 
-**Do not:** raise raw keydown caps to swallow masks; treat Maccy/⌘V as the residual FP (it is not); read phone keydowns into the shared-five gate; start collector before this writeup is accepted as the detection contract.
+**Do not:** raise raw keydown caps to swallow masks; move primary onto fill span; treat Maccy/⌘V as the residual FP (it fails necessary conditions); read phone into the shared-five gate; claim agent from paste+unattr alone; start collector before this contract is accepted.
 
-**Tolerances (§1):** `>= 4 of 5` and `<= 3` unattributed are precautionary caps — measured Comet is 5/5 paste and 0 unattr; nearest failure is 5 unattr. See §1 table before interpreting slack as observed behaviour.
+**Tolerances (§1):** `>= 4 of 5` and `<= 3` unattributed are precautionary for keydown classes. Context-menu human paste lands at 0 unattr — the tolerance does not separate that class. See §1 table.
 
 ---
 
