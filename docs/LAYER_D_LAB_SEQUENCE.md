@@ -55,7 +55,7 @@ Both tolerances in the decision block are **insurance**, not lab-validated slack
 | Unattributed keydowns | Every Comet arm **exactly 0**. Nearest *keydown* negative: autofill at **5**. Human context-menu paste also lands at **0** — so `<= 3` does **not** separate that class at all. Zero against zero. | `<= 3` | **Precautionary for keydown classes; useless against context-menu paste.** Leftover from the raw-total era. If a future run lands at 1 or 2, treat it as a surprise worth investigating. |
 | Paste field count | Every arm is **5/5 or 0/5**. Nothing has produced 3 or 4. | `>= 4 of 5` | **Untested tolerance** — insurance against a partial-paste case we have never observed. Fine to keep; do not read it as validated partial-paste behaviour. |
 | Paste-attribution window | Typing-sim attributed fully to zero unattributed keydowns. We did **not** measure the full offset distribution or the observed maximum across all attributed keydowns. | `[0, 500ms]` | **Precautionary, partially measured** — we know 500ms was sufficient for the typing-sim arm, not that it is tight. Record observed maxima on future runs before treating this as a calibrated boundary. |
-| Context-menu lookback | Not yet measured under v10 capture. | `PASTE_CONTEXT_LOOKBACK_MS = 2000` | **Named constant, unmeasured** — tune from data after arms A/B, not by argument. |
+| Context-menu lookback | Human v10 arm: disqualified offsets 1199–1786 ms; **one miss at 2010 ms** (email). Comet: zero menu / zero button===2. | `PASTE_CONTEXT_LOOKBACK_MS = 2000` | **Named constant; slightly tight on one sample.** Observed max so far **2010 ms**. Do not retune by argument — collect more arms (incl. Windows / Android) first. |
 
 **Why this shape (not “raise the keydown cap”, and not “move primary onto fill span”):**
 
@@ -185,9 +185,24 @@ State explicitly. Do not pretend the rule covers them.
 4. Paste-aware instrumentation + back-test on existing arms (Comet ×3, manual, autofill, Bitwarden).
 5. Keyboard clipboard-fill (Maccy) — pre-paste keydown lookalike; cleared under paste-aware rule.
 6. Human context-menu paste (desktop right-click) — necessary conditions pass (5/5, unattr 0); fill span ~11.7s. Gate problem confirmed.
-7. **Next (after v10 ship):** re-run context-menu arm (expect disqualifier on all 5) + ≥2 Comet arms (expect zero contextmenu / zero button===2). Device arms only after that.
+7. **v10 capture shipped** (`efdcfdf`): contextmenu / button===2 lookback + raw pointerHolds.
+8. Re-run human context-menu (expect disqualifier) + Comet plain + Comet controlled (expect zero disqualifier) — **done 2026-08-12**.
 
-**Not run / deferred:** programmatic-paste extension PWM (4a), iOS long-press (4b open), Android / Windows (Fitz), Kitesurf (§8), collector / `beacon.js` (testers first).
+### v10 arm results (2026-08-12)
+
+| Arm | paste | unattr | disqualified fields | contextmenu | button===2 | fill span | Verdict |
+|-----|------:|-------:|--------------------:|:-----------:|:----------:|----------:|---------|
+| Human right-click → Paste | 5/5 | 0 | **4/5** (`contextmenu`) | yes (1/field) | **0** | ~10074 ms | **not-agent (disqualifier)** |
+| Comet plain | 5/5 | 0 | **0/5** | **0** | **0** | 1208 ms | INCONCLUSIVE (necessary pass, no disq) |
+| Comet controlled | 5/5 | 0 | **0/5** | **0** | **0** | 1127 ms | INCONCLUSIVE (necessary pass, no disq) |
+
+**Disqualifier works and does not trip Comet.** Gate is not worse.
+
+**Human detail:** `contextmenu` alone carried the disqualifier (macOS Chrome: `pointerDownRight` stayed empty). Offsets menu→paste: name 1199, address 1785, city 1786, postcode 1532 ms. **Email miss:** menu→paste **2010 ms** — 10 ms outside `PASTE_CONTEXT_LOOKBACK_MS=2000`, so that field was not disqualified. Named constant is slightly tight against this one sample; do not retune by argument — record observed max (**2010**) and decide with more arms.
+
+**Comet pointerHolds:** dwell ~0–2 ms (focus clicks). Human holds on context-menu arm ~83–116 ms. Raw only; no hold rule.
+
+**Not run / deferred:** programmatic-paste extension PWM (4a), **iOS long-press** (next on Antonello iPhone), Android / Windows (Fitz), Kitesurf (§8), collector / `beacon.js` (testers first).
 
 ---
 
