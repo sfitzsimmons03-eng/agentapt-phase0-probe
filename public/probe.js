@@ -37,6 +37,7 @@
   var S = load() || blank();
 
   function save() {
+    try { recomputeLayerD(); } catch (e) { /* defined later in parse order for listeners; hoisted */ }
     var raw = JSON.stringify(S);
     try { sessionStorage.setItem(KEY, raw); } catch (e) { /* quota — ignore */ }
     /* Survive tab close when agents dismiss the window before a download fires. */
@@ -53,7 +54,8 @@
     scrollEvents: 0,
     pointerEvents: 0,
     clicks: [],
-    fields: {}
+    fields: {},
+    layerD: null
   };
   S.pages.push(page);
 
@@ -360,8 +362,51 @@
    * attributed to the paste (mask typing-sim), not counted as user typing. */
   var PASTE_ATTR_WINDOW_MS = 500;
   /* Human context-menu / right-click lookback before paste.
-   * Named constant — tune from data later, not by argument. */
+   * Named constant — under session-level disqualification this is no
+   * longer decision-critical (one hit anywhere is enough). Do not retune
+   * against a single sample. */
   var PASTE_CONTEXT_LOOKBACK_MS = 2000;
+  /* Harbour Lane shared address fields — necessary-condition scope. */
+  var LAYER_D_SHARED = ['name', 'email', 'address', 'city', 'postcode'];
+
+  function recomputeLayerD() {
+    var fields = page.fields || {};
+    var pasteFields = 0;
+    var unattr = 0;
+    var disqualifiedFields = [];
+    var name;
+    for (name in fields) {
+      if (!Object.prototype.hasOwnProperty.call(fields, name)) continue;
+      var f = fields[name];
+      if (f && f.pasteDisqualified) disqualifiedFields.push(name);
+    }
+    var i;
+    for (i = 0; i < LAYER_D_SHARED.length; i++) {
+      name = LAYER_D_SHARED[i];
+      f = fields[name];
+      if (!f) continue;
+      if ((f.pastes || 0) >= 1 || f.pasteObserved) pasteFields++;
+      unattr += f.keydownsUnattributed || 0;
+    }
+    var necessaryPass = pasteFields >= 4 && unattr <= 3;
+    /* Session-level: ANY field disqualifier disqualifies the whole session. */
+    var sessionDisqualified = disqualifiedFields.length > 0;
+    var verdict;
+    if (!necessaryPass) verdict = 'not-agent-necessary-fail';
+    else if (sessionDisqualified) verdict = 'not-agent-disqualifier';
+    else verdict = 'inconclusive';
+    page.layerD = {
+      sharedFields: LAYER_D_SHARED.slice(),
+      pasteFields: pasteFields,
+      unattributedKeydowns: unattr,
+      necessaryPass: necessaryPass,
+      disqualifiedFields: disqualifiedFields,
+      sessionDisqualified: sessionDisqualified,
+      pasteContextLookbackMs: PASTE_CONTEXT_LOOKBACK_MS,
+      pasteAttrWindowMs: PASTE_ATTR_WINDOW_MS,
+      verdict: verdict
+    };
+  }
 
   function fieldRec(el) {
     var name = el.name || el.id || el.type || 'field';
