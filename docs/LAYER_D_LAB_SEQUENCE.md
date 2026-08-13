@@ -1,10 +1,12 @@
 # Layer D — Lab sequence (form-fill signature)
 
-**Status:** Lab open for Arm F (slow all-context-menu); windowless session disqualifier in probe v12. Collector still parked.  
+**Status:** Arm F adopted windowless verdict (v12). Arm G (extension PWM) next. Collector parked.  
 **Harness:** [agentapt-phase0-probe](https://github.com/sfitzsimmons03-eng/agentapt-phase0-probe) · live `https://probe.agentapt.tech`  
-**Probe:** `probe.js` v12+ (windowless session disqualifier over fill span; per-field 2000ms diagnostic only)  
+**Probe:** `probe.js` v13+ (windowless session disqualifier = verdict; per-field 2000ms diagnostic only; `recentPointerDowns` on contextmenu)  
 **Date:** 2026-08-13  
 **Scope:** Behavioural fill detection only (Layer D). Layers A/B/C out of scope here.
+
+**Process note:** future arms must state the exact measurement interval they perturb and confirm the run actually perturbs it before execution. Arms E and F were both derivable from §7 before being written; F validated the windowless path Claude now adopts.
 
 This document is the evidence base for a detection-layer ticket. Write the ticket against these numbers and bounds — not against a re-tuned threshold.
 
@@ -254,9 +256,35 @@ Under session-level rule this arm is **not-agent** (sessionDisqualified=true).
 
 Inter-paste gaps: 4538 / 5807 / 5577 / 6021 ms.
 
-**Read:** necessary conditions match Comet (paste 5/5, unattr 0). Windowless session rule fires on 5 menus. Per-field lookback still fired this run (4 hits) so this is **not** yet the “old rule would have called them an agent” case — that needs **all five** menu→paste gaps > 2000 ms. Important correction: the 4–6s pause is *between fields*; the lookback is *menu → Paste on the same field*. Name at 2929 ms and address at 1997 ms show that gap is the load-bearing one, and 2000 ms is already clipping real human menu use. Windowless fill-span counting is the rule that does not depend on that clip.
+**Read:** necessary conditions match Comet (paste 5/5, unattr 0). **Windowless session rule adopted as the verdict path** (`contextMenuCountInFill=5` → `not-agent-disqualifier`). Per-field 2000ms retired from verdict — diagnostic only. Observed menu→paste gaps span 1412–2929 ms with address at 1997 ms (3 ms inside) and v10 email at 2010 ms (10 ms outside); constant sits in the middle of human distribution, not between populations — do not retune.
 
-**Not run / deferred:** programmatic-paste PWM (4a), Android / Windows (Fitz), Kitesurf (§8), collector.
+**Not run / deferred:** Arm G (extension PWM), Android / Windows (Fitz), Kitesurf (§8), collector.
+
+---
+
+## 5b. Arm G — extension-based password-manager fill (next)
+
+**Objective:** does extension native autofill produce agent signature under adopted rule?
+
+Necessary: paste ≥4/5, unattr ≤3. Disqualifier: zero `contextmenu` / button===2 in fill span.
+
+| Arm | Method | Expected |
+|-----|--------|----------|
+| **G1** | 1Password extension inline autofill (not copy-from-vault) | **decisive** — paste vs input-only per field |
+| **G2** | 1Password vault → copy → ⌘V | fail necessary (Maccy control) |
+| **G3** | Bitwarden or Chrome built-in autofill (same as G1) | same question as G1 |
+
+**Record per arm:** `pasteFields`, `unattributedKeydowns`, `contextMenuCountInFill`, `pointerRightCountInFill`, `layerD.verdict`. **Per field:** `pastes` vs `events` with no paste (input-only inject).
+
+**Decisive outcomes:**
+- G1 paste ≥4/5, unattr ≤3, zero disqualifiers → **false positive**; Layer D needs new signal before ship.
+- G1 values arrive as `input` without `paste` → extensions **structurally invisible** to necessary condition (strong as Maccy result).
+
+**Setup:** warm `https://probe.agentapt.tech/checkout.html` (Render cold start 30–60s). `__probeReset()` each arm. Confirm `probe.js?v=13`. Separate `__probeSave('pwm-g1-1password')` etc. Do not tune.
+
+**Pointer sanity (fold into any arm):** one deliberate right-click — check `contextMenus[].recentPointerDowns` for pointerdown button values. F already showed `pointerDownCount>0` and holds populated with `button===2` empty on macOS Chrome.
+
+**iPhone:** available. iOS long-press arm already run (2026-08-12) — see §3 iOS section. WebKit gap open; hold hypothesis captured raw.
 
 ### iOS long-press paste (2026-08-12, Safari iPhone)
 
@@ -290,7 +318,7 @@ Note: clipboard values in this run were the probe version-check snippet pasted i
 | https://probe.agentapt.tech/checkout-controlled.html | React controlled + ZIP/phone rewrite |
 | https://probe.agentapt.tech/checkout-typing-sim.html | Paste → synthetic per-char keydowns |
 
-Retrieval: `__probeSave('tag')` / `__probeReset()` before clean arms. Prefer fresh session; sessionStorage accumulates historical pages. Confirm `probe.js?v=12` before Arm F.
+Retrieval: `__probeSave('tag')` / `__probeReset()` before clean arms. Prefer fresh session; sessionStorage accumulates historical pages. Confirm `probe.js?v=13` before Arm G.
 
 ---
 

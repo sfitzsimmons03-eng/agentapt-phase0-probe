@@ -55,7 +55,8 @@
     pointerEvents: 0,
     clicks: [],
     fields: {},
-    layerD: null
+    layerD: null,
+    pointerDownLog: []
   };
   S.pages.push(page);
 
@@ -564,29 +565,43 @@
   }, true);
   addEventListener('contextmenu', function (e) {
     if (!isFormControl(e.target)) return;
-    var rec = fieldRec(e.target);
+    var el = e.target;
+    var rec = fieldRec(el);
     var t = Date.now() - T0;
+    var fname = el.name || el.id || el.type || 'field';
+    var recent = [];
+    var log = page.pointerDownLog || [];
+    var i;
+    for (i = 0; i < log.length; i++) {
+      if (log[i].field === fname && t - log[i].at <= 500) recent.push(log[i]);
+    }
     if (rec.contextMenus.length < 40) {
       rec.contextMenus.push({
         at: t,
         trusted: !!e.isTrusted,
-        button: e.button
+        button: e.button,
+        /* Sanity: did pointerdown fire before menu, and with what button? */
+        recentPointerDowns: recent
       });
     }
     save();
   }, true);
   addEventListener('pointerdown', function (e) {
     if (!isFormControl(e.target)) return;
-    var rec = fieldRec(e.target);
+    var el = e.target;
+    var rec = fieldRec(el);
     var t = Date.now() - T0;
+    var fname = el.name || el.id || el.type || 'field';
     rec.pointerDownCount = (rec.pointerDownCount || 0) + 1;
     var ptr = {
       at: t,
+      field: fname,
       button: e.button,
       pointerType: e.pointerType || null,
       pointerId: e.pointerId,
       trusted: !!e.isTrusted
     };
+    if (page.pointerDownLog.length < 80) page.pointerDownLog.push(ptr);
     if (e.button === 2) {
       if (rec.pointerDownRight.length < 40) rec.pointerDownRight.push(ptr);
     }
