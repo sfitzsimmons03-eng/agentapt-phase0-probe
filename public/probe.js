@@ -361,10 +361,9 @@
   /* Keydowns within this window after a paste on the same field are
    * attributed to the paste (mask typing-sim), not counted as user typing. */
   var PASTE_ATTR_WINDOW_MS = 500;
-  /* Human context-menu / right-click lookback before paste.
-   * Named constant — under session-level disqualification this is no
-   * longer decision-critical (one hit anywhere is enough). Do not retune
-   * against a single sample. */
+  /* Per-field contextmenu→paste lookback — DIAGNOSTIC ONLY.
+   * Session verdict no longer uses this window (see recomputeLayerD).
+   * Kept so Arm F can compare per-field vs windowless session rules. */
   var PASTE_CONTEXT_LOOKBACK_MS = 2000;
   /* Harbour Lane shared address fields — necessary-condition scope. */
   var LAYER_D_SHARED = ['name', 'email', 'address', 'city', 'postcode'];
@@ -374,11 +373,33 @@
     var pasteFields = 0;
     var unattr = 0;
     var disqualifiedFields = [];
+    var allMenus = [];
+    var allRights = [];
+    var pointerHoldCount = 0;
+    var pointerDownCount = 0;
+    var firstFocusAt = null;
+    var lastPasteAt = null;
     var name;
     for (name in fields) {
       if (!Object.prototype.hasOwnProperty.call(fields, name)) continue;
       var f = fields[name];
-      if (f && f.pasteDisqualified) disqualifiedFields.push(name);
+      if (!f) continue;
+      if (f.pasteDisqualified) disqualifiedFields.push(name);
+      var j;
+      for (j = 0; j < (f.contextMenus || []).length; j++) {
+        allMenus.push({ field: name, at: f.contextMenus[j].at });
+      }
+      for (j = 0; j < (f.pointerDownRight || []).length; j++) {
+        allRights.push({ field: name, at: f.pointerDownRight[j].at });
+      }
+      pointerHoldCount += (f.pointerHolds || []).length;
+      pointerDownCount += (f.pointerDownCount || 0);
+      if (f.firstFocusAt != null) {
+        if (firstFocusAt == null || f.firstFocusAt < firstFocusAt) firstFocusAt = f.firstFocusAt;
+      }
+      if (f.lastPasteAt != null) {
+        if (lastPasteAt == null || f.lastPasteAt > lastPasteAt) lastPasteAt = f.lastPasteAt;
+      }
     }
     var i;
     for (i = 0; i < LAYER_D_SHARED.length; i++) {
@@ -389,20 +410,55 @@
       unattr += f.keydownsUnattributed || 0;
     }
     var necessaryPass = pasteFields >= 4 && unattr <= 3;
-    /* Session-level: ANY field disqualifier disqualifies the whole session. */
-    var sessionDisqualified = disqualifiedFields.length > 0;
+
+    /* Session disqualifier: ANY contextmenu or button===2 between first
+     * field focus and last paste of the fill — NO per-field lookback.
+     * Stray right-click in that window errs toward not-agent. */
+    function inFillWindow(at) {
+      if (at == null) return false;
+      if (firstFocusAt != null && at < firstFocusAt) return false;
+      if (lastPasteAt != null && at > lastPasteAt) return false;
+      /* If we have pastes but no focus yet, still count events up to last paste. */
+      if (firstFocusAt == null && lastPasteAt != null && at > lastPasteAt) return false;
+      return firstFocusAt != null || lastPasteAt != null;
+    }
+    var menusInFill = [];
+    var rightsInFill = [];
+    for (i = 0; i < allMenus.length; i++) {
+      if (inFillWindow(allMenus[i].at)) menusInFill.push(allMenus[i]);
+    }
+    for (i = 0; i < allRights.length; i++) {
+      if (inFillWindow(allRights[i].at)) rightsInFill.push(allRights[i]);
+    }
+    var sessionDisqualified = menusInFill.length > 0 || rightsInFill.length > 0;
+    /* Old path: per-field lookback hit on any field (diagnostic compare). */
+    var sessionDisqualifiedPerFieldLookback = disqualifiedFields.length > 0;
+
     var verdict;
     if (!necessaryPass) verdict = 'not-agent-necessary-fail';
     else if (sessionDisqualified) verdict = 'not-agent-disqualifier';
     else verdict = 'inconclusive';
+
     page.layerD = {
       sharedFields: LAYER_D_SHARED.slice(),
       pasteFields: pasteFields,
       unattributedKeydowns: unattr,
       necessaryPass: necessaryPass,
-      disqualifiedFields: disqualifiedFields,
+      /* Diagnostic: fields that hit the 2000ms per-field lookback. */
+      disqualifiedFieldsPerFieldLookback: disqualifiedFields,
+      perFieldLookbackMs: PASTE_CONTEXT_LOOKBACK_MS,
+      /* Session verdict inputs (windowless fill span). */
+      fillFirstFocusAt: firstFocusAt,
+      fillLastPasteAt: lastPasteAt,
+      contextMenusInFill: menusInFill,
+      pointerRightInFill: rightsInFill,
+      contextMenuCountInFill: menusInFill.length,
+      pointerRightCountInFill: rightsInFill.length,
       sessionDisqualified: sessionDisqualified,
-      pasteContextLookbackMs: PASTE_CONTEXT_LOOKBACK_MS,
+      sessionDisqualifiedPerFieldLookback: sessionDisqualifiedPerFieldLookback,
+      /* Pointer-capture health counters. */
+      pointerDownCount: pointerDownCount,
+      pointerHoldCount: pointerHoldCount,
       pasteAttrWindowMs: PASTE_ATTR_WINDOW_MS,
       verdict: verdict
     };
@@ -414,6 +470,7 @@
       page.fields[name] = {
         events: 0, firstAt: null, lastAt: null, finalLength: 0,
         keydowns: 0, pastes: 0, gaps: [], _prev: null,
+        firstFocusAt: null,
         /* Paste survival (mask/controlled may swallow or rewrite). */
         pasteObserved: false,
         pasteDetails: [],
@@ -425,8 +482,10 @@
         /* Context-menu / right-click disqualifier + raw pointer hold. */
         contextMenus: [],
         pointerDownRight: [],
+        pointerDownCount: 0,
         pointerHolds: [],
         openPointerDowns: [],
+        /* Diagnostic only — per-field 2000ms lookback. */
         pasteDisqualified: false,
         pasteDisqualifyReasons: []
       };
@@ -496,6 +555,13 @@
       save();
     } catch (err) {}
   }
+  addEventListener('focusin', function (e) {
+    if (!isFormControl(e.target)) return;
+    var rec = fieldRec(e.target);
+    var t = Date.now() - T0;
+    if (rec.firstFocusAt == null) rec.firstFocusAt = t;
+    save();
+  }, true);
   addEventListener('contextmenu', function (e) {
     if (!isFormControl(e.target)) return;
     var rec = fieldRec(e.target);
@@ -513,6 +579,7 @@
     if (!isFormControl(e.target)) return;
     var rec = fieldRec(e.target);
     var t = Date.now() - T0;
+    rec.pointerDownCount = (rec.pointerDownCount || 0) + 1;
     var ptr = {
       at: t,
       button: e.button,

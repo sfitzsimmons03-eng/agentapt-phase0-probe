@@ -1,9 +1,9 @@
 # Layer D — Lab sequence (form-fill signature)
 
-**Status:** Lab open for Arm E (mixed-method human); session-level disqualifier in probe v11. Collector still parked.  
+**Status:** Lab open for Arm F (slow all-context-menu); windowless session disqualifier in probe v12. Collector still parked.  
 **Harness:** [agentapt-phase0-probe](https://github.com/sfitzsimmons03-eng/agentapt-phase0-probe) · live `https://probe.agentapt.tech`  
-**Probe:** `probe.js` v11+ (paste survival + paste-aware keydown attribution + context-menu disqualifier + session-level `layerD` verdict)  
-**Date:** 2026-08-12  
+**Probe:** `probe.js` v12+ (windowless session disqualifier over fill span; per-field 2000ms diagnostic only)  
+**Date:** 2026-08-13  
 **Scope:** Behavioural fill detection only (Layer D). Layers A/B/C out of scope here.
 
 This document is the evidence base for a detection-layer ticket. Write the ticket against these numbers and bounds — not against a re-tuned threshold.
@@ -28,11 +28,11 @@ NECESSARY (not sufficient):
   AND
   sum(keydownsUnattributed) across those fields <= 3
 
-DISQUALIFIER (structural, SESSION-LEVEL):
-  if contextmenu OR pointerdown(button===2) landed on ANY field
-  within PASTE_CONTEXT_LOOKBACK_MS (2000) before that field's paste
-  → the WHOLE SESSION is disqualified as agent evidence
-  (one hit is enough; field-level flags are retained for diagnostics)
+DISQUALIFIER (structural, SESSION-LEVEL, WINDOWLESS):
+  if ANY contextmenu OR pointerdown(button===2) occurs on a form
+  control between first field focus and last paste of the fill
+  → the WHOLE SESSION is not-agent
+  Per-field 2000ms lookback is DIAGNOSTIC ONLY — not used for verdict.
 
 VERDICT:
   necessary fails                         → not agent
@@ -45,39 +45,34 @@ Verdict shape (verbatim): **necessary pass + disqualifier → not-agent; necessa
 
 Absence of a disqualifier draws **no positive conclusion**. Corroborators may upgrade a verdict later; their absence must never assert one. Product rule: a false positive that tells a merchant “an AI agent filled your checkout” when it was a person (especially iPhone) is a hard line we do not cross. Error direction we accept: under-report agent traffic rather than invent agent traffic.
 
-**Why session-level (not field-level):** a human who right-clicks one field and ⌘V-pastes the other four would leave 4 fields clearing paste≥4 with no per-field disqualifier. Field-level would still look agentish. Session-level: any one disqualified field fails the session. Cost: if a future agent pastes via synthetic right-click, we go blind to that whole class, not one field. Accept deliberately — re-check **zero contextmenu on every new agent** added to the matrix (today: 2 Comet arms at zero; not settled forever).
+**Why windowless session-level (corrected after Arm E):** Arm E (1× context-menu + 4× ⌘V) was the wrong danger shape — four ⌘V always produce ~8+ unattributable keydowns, so necessary fails without the disqualifier. The real danger is **all-context-menu, paced slowly**: paste 5/5, unattr 0, indistinguishable from Comet on necessary conditions. Then the disqualifier is the entire separation, and it only works if **at least one** contextmenu is counted. Per-field 2000ms lookback can miss slow gaps (v10 email miss at 2010ms). Session verdict therefore counts any menu/right-click in the fill span (first focus → last paste), with no lookback. Stray right-click in that window errs toward not-agent.
 
-**Evasion caveat (not a blocker):** session-level is trivially evadable — an agent could dispatch a synthetic `contextmenu` and disqualify itself. Acceptable now: today's agents aren't hiding; if they were, the paste-signature approach collapses anyway. Error lands on "not agent" / inconclusive — the direction we want.
+**Still true:** re-check **zero contextmenu on every new agent** in the matrix (today: 2 Comet arms at zero; not settled forever). Cost of session-level: a future agent that pastes via synthetic right-click blinds the whole class.
+
+**Evasion caveat (not a blocker):** trivially evadable via synthetic `contextmenu`. Acceptable now: today's agents aren't hiding; if they were, paste-signature collapses anyway. Error lands on "not agent" / inconclusive.
 
 Shared fields on Harbour Lane: `name`, `email`, `address`, `city`, `postcode`.
 
-Phone is **instrumented but out of necessary-condition scope**. It **does** count toward session disqualification if it trips contextmenu/right-click (any field).
+Phone is **instrumented but out of necessary-condition scope**. It **does** count toward session disqualification if it fires contextmenu/right-click in the fill window.
 
 **Measured vs precautionary (read before building on this rule):**
 
-Both tolerances in the decision block are **insurance**, not lab-validated slack. The data supports a sharper rule; the caps are kept for margin.
-
 | Parameter | What the arms show | What the rule says | Status |
 |-----------|-------------------|-------------------|--------|
-| Unattributed keydowns | Every Comet arm **exactly 0**. Nearest *keydown* negative: autofill at **5**. Human context-menu paste also lands at **0** — so `<= 3` does **not** separate that class at all. Zero against zero. | `<= 3` | **Precautionary for keydown classes; useless against context-menu paste.** Leftover from the raw-total era. If a future run lands at 1 or 2, treat it as a surprise worth investigating. |
-| Paste field count | Every arm is **5/5 or 0/5**. Nothing has produced 3 or 4. | `>= 4 of 5` | **Untested tolerance** — insurance against a partial-paste case we have never observed. Fine to keep; do not read it as validated partial-paste behaviour. |
-| Paste-attribution window | Typing-sim attributed fully to zero unattributed keydowns. We did **not** measure the full offset distribution or the observed maximum across all attributed keydowns. | `[0, 500ms]` | **Precautionary, partially measured** — we know 500ms was sufficient for the typing-sim arm, not that it is tight. Record observed maxima on future runs before treating this as a calibrated boundary. |
-| Context-menu lookback | Human v10: disqualified offsets 1199–1786 ms; one field miss at **2010 ms**. Under session-level, that miss costs nothing if any other field hits. | `PASTE_CONTEXT_LOOKBACK_MS = 2000` | **Named constant; no longer decision-critical.** Do **not** retune against the 2010ms sample. Leave at 2000. |
+| Unattributed keydowns | Comet always **0**. Autofill **5**. Human all-context-menu **0**. Arm E mixed ⌘V **10**. | `<= 3` | Precautionary for keydown classes; does not separate all-context-menu humans. |
+| Paste field count | Always **5/5 or 0/5** so far. | `>= 4 of 5` | Untested partial-paste tolerance. |
+| Paste-attribution window | Typing-sim attributed fully inside 500ms. | `[0, 500ms]` | Precautionary, partially measured. |
+| Per-field context lookback | v10 miss at 2010ms; Arm F will stress slow gaps. | `2000ms` | **Diagnostic only — not in session verdict path.** Do not retune. |
 
-**Why this shape (not “raise the keydown cap”, and not “move primary onto fill span”):**
+**Why this shape (not fill span as primary):** fill span is continuous and fragile. Keep paste+unattr as necessary; structural windowless session disqualifier for context-menu humans; silence → INCONCLUSIVE.
 
-- A masked ZIP that rebuilds paste char-by-char manufactures keydowns *after* paste. Raising `≤3` → `≤12` fixes one mask and dies on the next. Attribution measures the mask, not the agent.
-- Keyboard clipboard fill (⌘V / Maccy) manufactures keydowns *before* paste. Those cannot attribute to a paste that has not fired yet. Same instrumentation separates that class for free.
-- Comet has no keyboard involvement: paste without preceding shortcut keydowns → unattributed ≈ 0.
-- Human context-menu paste (right-click → Paste) also lands paste 5/5 / unattr 0. Fill span is continuous and fragile. **Do not move the primary gate onto fill span.** Keep paste+unattr as necessary conditions; add a **structural session-level disqualifier** (contextmenu / button===2 before paste). Absence → INCONCLUSIVE, never agent-detected.
+**Corroboration only:** fill span / clicks. `pointerHolds` raw for iOS — no hold rule yet.
 
-**Corroboration only (never primary, never asserts alone):** fill span ~1.1–1.4s and ~5 INPUT clicks on Comet. Timing alone is fragile. Pointer-hold traces (`pointerHolds` dwellMs) are captured raw for a possible iOS long-press separator later — **no consumer yet; do not invent a rule from them.**
+**Paste survival:** `pasteObserved`, `exactMatch` / `digitsMatch` kept.
 
-**Paste survival instrumentation (kept):** per-field `pasteObserved`, clipboard vs landed `exactMatch` / `digitsMatch` (sample after mask rewrite). Masks that format (phone) correctly show exactMatch false + digitsMatch true.
+**Capture (v12):** per-field menus/rights/holds + `firstFocusAt`; page `layerD` with windowless `sessionDisqualified`, diagnostic `disqualifiedFieldsPerFieldLookback`, and `pointerDownCount` / `pointerHoldCount` health counters.
 
-**Context-menu / pointer capture (v10/v11):** per field — `contextMenus[]`, `pointerDownRight[]` (button===2), `pointerHolds[]` (down/up dwellMs). On each paste, flag field `pasteDisqualified` if menu/right-button landed within lookback. Page `layerD` rolls that up to **sessionDisqualified** / `verdict`.
-
-**Pointer-capture health check (answered before trusting iOS):** on the macOS human context-menu arm, `pointerHolds` were populated (~83–116 ms) while `pointerDownRight` stayed 0. Capture is alive; macOS Chrome simply does not set `button===2` on that path — `contextmenu` covers it. iOS arm then showed long touch dwells ~842–1079 ms. Not "empty because dead instrumentation."
+**Pointer-capture health (CLOSED — do not re-block on this):** macOS human context-menu arm had `pointerHolds` populated (~83–116 ms) while `button===2` stayed 0 → capture alive; macOS Chrome simply does not set button 2 on that path. iOS arm then recorded long touch dwells ~842–1079 ms. Not silent-dead instrumentation.
 
 ---
 
@@ -227,7 +222,11 @@ Under session-level rule this arm is **not-agent** (sessionDisqualified=true).
 | `layerD.verdict` | `not-agent-necessary-fail` |
 | fill span | ~11062 ms |
 
-**Read:** four ⌘V pastes do **not** stay under `unattr <= 3`. The necessary gate already catches this shape. Session-level disqualifier still fired (1 hit) — **belt-and-braces**, not the sole separator. The hypothetical “necessary passes + only one disqualifier stands between human and agent” case did **not** appear on this arm.
+**Read:** four ⌘V pastes do **not** stay under `unattr <= 3`. Spec error, not probe error: Cmd-V is two pre-paste keydowns ×4 ⇒ necessary always fails. Mixed-method was never the danger zone.
+
+**Danger zone (next):** all-context-menu, paced slowly — unattr 0, paste 5/5, necessary passes; only session disqualifier separates from Comet.
+
+**Arm F (pending, v12):** all five fields context-menu paste, **4–6s pause between fields**, no keyboard. Expect: paste 5/5, unattr 0, per-field lookback disq 0–1, windowless session disq yes (5 menus in fill). Raw menu/paste timestamps for gap distribution.
 
 **Not run / deferred:** programmatic-paste extension PWM (4a), Android / Windows (Fitz), Kitesurf (§8), collector / `beacon.js` (testers first).
 
@@ -263,7 +262,7 @@ Note: clipboard values in this run were the probe version-check snippet pasted i
 | https://probe.agentapt.tech/checkout-controlled.html | React controlled + ZIP/phone rewrite |
 | https://probe.agentapt.tech/checkout-typing-sim.html | Paste → synthetic per-char keydowns |
 
-Retrieval: `__probeSave('tag')` / `__probeReset()` before clean arms. Prefer fresh session; sessionStorage accumulates historical pages. Confirm `probe.js?v=11` before Arm E.
+Retrieval: `__probeSave('tag')` / `__probeReset()` before clean arms. Prefer fresh session; sessionStorage accumulates historical pages. Confirm `probe.js?v=12` before Arm F.
 
 ---
 
@@ -273,16 +272,16 @@ Retrieval: `__probeSave('tag')` / `__probeReset()` before clean arms. Prefer fre
 
 1. Paste presence on ≥4 of 5 address fields as a **necessary** condition (not sufficient).
 2. Unattributed keydown sum (paste-window attribution, 500ms) as a **necessary** keydown gate — not raw totals.
-3. Structural **session-level disqualifier**: contextmenu / pointerdown(button===2) within lookback before paste on **any** field → whole session not-agent.
+3. Structural **session-level disqualifier (windowless):** any contextmenu / button===2 between first field focus and last paste → whole session not-agent. Per-field 2000ms lookback is diagnostic only.
 4. Necessary pass + silence → **INCONCLUSIVE** (never assert agent-detected).
 5. Re-check zero-contextmenu assumption against every new agent in the matrix.
 6. Documented FP residual: programmatic paste with no keystrokes; iOS long-press (hold hypothesis open, not a shipped rule).
 7. Documented FN: agents that type instead of paste; agents that synthesize contextmenu (self-disqualify — accepted error direction).
 8. Install: theme embed / page script only — not a Shopify web pixel.
 
-**Do not:** raise raw keydown caps to swallow masks; move primary onto fill span; retune 2000ms lookback against one sample; treat Maccy/⌘V as the residual FP (it fails necessary conditions); read phone into the necessary shared-five sum; claim agent from paste+unattr alone; start collector before this contract is accepted.
+**Do not:** raise raw keydown caps to swallow masks; move primary onto fill span; retune 2000ms lookback; treat Maccy/⌘V as the residual FP (it fails necessary conditions); read phone into the necessary shared-five sum; claim agent from paste+unattr alone; start collector before this contract is accepted.
 
-**Tolerances (§1):** `>= 4 of 5` and `<= 3` unattributed are precautionary for keydown classes. Context-menu human paste lands at 0 unattr — the tolerance does not separate that class. Lookback is no longer decision-critical under session-level. See §1 table.
+**Tolerances (§1):** `>= 4 of 5` and `<= 3` unattributed are precautionary for keydown classes. All-context-menu humans land at 0 unattr — necessary conditions do not separate them; windowless session disqualifier does. See §1.
 
 ---
 
