@@ -226,9 +226,26 @@ Under session-level rule this arm is **not-agent** (sessionDisqualified=true).
 
 **Danger zone (next):** all-context-menu, paced slowly — unattr 0, paste 5/5, necessary passes; only session disqualifier separates from Comet.
 
-**Arm F (pending, v12):** all five fields context-menu paste, **4–6s pause between fields**, no keyboard. Expect: paste 5/5, unattr 0, per-field lookback disq 0–1, windowless session disq yes (5 menus in fill). Raw menu/paste timestamps for gap distribution.
+**Arm F (2026-08-13, first attempt — incomplete method):** intended slow all-context-menu; measured path did **not** record any `contextmenu`.
 
-**Not run / deferred:** programmatic-paste extension PWM (4a), Android / Windows (Fitz), Kitesurf (§8), collector / `beacon.js` (testers first).
+| Signal | Result |
+|--------|--------|
+| paste | **5/5** |
+| unattributed keydowns | **0** |
+| per-field 2000ms disq | **0/5** |
+| windowless `sessionDisqualified` | **false** (`contextMenuCountInFill=0`) |
+| `necessaryPass` | **true** |
+| `layerD.verdict` | **`inconclusive`** |
+| fill span | ~18876 ms (slow pacing held: ~4–6s between pastes) |
+| pointer health | `pointerDownCount=6`, holds ~89–141 ms — **capture alive** |
+| `button===2` | 0 (same macOS Chrome pattern as before) |
+
+**Raw paste ats:** email 337523, name 343941 (+6.4s), address 348390 (+4.4s), city 352483 (+4.1s), postcode 356400 (+3.9s).  
+**Raw contextmenu ats on this page:** none.
+
+**Read:** this is the danger zone on necessary conditions (identical to Comet primary), and **both** disqualifier shapes failed because no `contextmenu` fired on the fields. Not a lookback miss — zero menus entirely. Pointer instrumentation is healthy; the paste path used did not go through field right-click (possible: menu-bar Edit→Paste, clipboard-manager inject, or other non-contextmenu paste). **Re-run required** with confirmed right-click → Paste on each field (must see the browser context menu open on the input).
+
+**Not run / deferred:** Arm F re-run (confirmed right-click), programmatic-paste PWM (4a), Android / Windows (Fitz), Kitesurf (§8), collector.
 
 ### iOS long-press paste (2026-08-12, Safari iPhone)
 
