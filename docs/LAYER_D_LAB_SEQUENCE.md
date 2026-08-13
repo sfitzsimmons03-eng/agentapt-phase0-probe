@@ -226,26 +226,37 @@ Under session-level rule this arm is **not-agent** (sessionDisqualified=true).
 
 **Danger zone (next):** all-context-menu, paced slowly — unattr 0, paste 5/5, necessary passes; only session disqualifier separates from Comet.
 
-**Arm F (2026-08-13, first attempt — incomplete method):** intended slow all-context-menu; measured path did **not** record any `contextmenu`.
+**Arm F first attempt (2026-08-13, incomplete method):** slow paste 5/5, unattr 0, **zero** `contextmenu` — not right-click. Verdict `inconclusive`. Pointer capture healthy. Discarded as a method miss, not a lookback result.
+
+**Arm F confirmed (2026-08-13):** all five fields right-click → Paste, no keyboard, ~4.5–6.0s between pastes.
 
 | Signal | Result |
 |--------|--------|
 | paste | **5/5** |
 | unattributed keydowns | **0** |
-| per-field 2000ms disq | **0/5** |
-| windowless `sessionDisqualified` | **false** (`contextMenuCountInFill=0`) |
-| `necessaryPass` | **true** |
-| `layerD.verdict` | **`inconclusive`** |
-| fill span | ~18876 ms (slow pacing held: ~4–6s between pastes) |
-| pointer health | `pointerDownCount=6`, holds ~89–141 ms — **capture alive** |
-| `button===2` | 0 (same macOS Chrome pattern as before) |
+| `necessaryPass` | **true** (danger zone vs Comet primary) |
+| per-field 2000ms disq | **4/5** (miss: `name` menu→paste **2929 ms**) |
+| windowless `sessionDisqualified` | **true** (`contextMenuCountInFill=5`) |
+| `layerD.verdict` | **`not-agent-disqualifier`** |
+| fill span | ~21943 ms |
+| `button===2` | 0 (macOS Chrome; `contextmenu` carries) |
+| pointer health | downs=7, holds ~99–184 ms |
 
-**Raw paste ats:** email 337523, name 343941 (+6.4s), address 348390 (+4.4s), city 352483 (+4.1s), postcode 356400 (+3.9s).  
-**Raw contextmenu ats on this page:** none.
+**Raw contextmenu / paste ats (page t0):**
 
-**Read:** this is the danger zone on necessary conditions (identical to Comet primary), and **both** disqualifier shapes failed because no `contextmenu` fired on the fields. Not a lookback miss — zero menus entirely. Pointer instrumentation is healthy; the paste path used did not go through field right-click (possible: menu-bar Edit→Paste, clipboard-manager inject, or other non-contextmenu paste). **Re-run required** with confirmed right-click → Paste on each field (must see the browser context menu open on the input).
+| Field | menu at | paste at | gap |
+|-------|--------:|---------:|----:|
+| email | 2479 | 3891 | **1412** (inside 2000) |
+| name | 5500 | 8429 | **2929** (outside) |
+| address | 12239 | 14236 | **1997** (3 ms inside) |
+| city | 18108 | 19813 | **1705** |
+| postcode | 24239 | 25834 | **1595** |
 
-**Not run / deferred:** Arm F re-run (confirmed right-click), programmatic-paste PWM (4a), Android / Windows (Fitz), Kitesurf (§8), collector.
+Inter-paste gaps: 4538 / 5807 / 5577 / 6021 ms.
+
+**Read:** necessary conditions match Comet (paste 5/5, unattr 0). Windowless session rule fires on 5 menus. Per-field lookback still fired this run (4 hits) so this is **not** yet the “old rule would have called them an agent” case — that needs **all five** menu→paste gaps > 2000 ms. Important correction: the 4–6s pause is *between fields*; the lookback is *menu → Paste on the same field*. Name at 2929 ms and address at 1997 ms show that gap is the load-bearing one, and 2000 ms is already clipping real human menu use. Windowless fill-span counting is the rule that does not depend on that clip.
+
+**Not run / deferred:** programmatic-paste PWM (4a), Android / Windows (Fitz), Kitesurf (§8), collector.
 
 ### iOS long-press paste (2026-08-12, Safari iPhone)
 
