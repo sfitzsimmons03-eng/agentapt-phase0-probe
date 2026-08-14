@@ -1,0 +1,12 @@
+name = "agentapt-beacon"
+main = "src/index.ts"
+compatibility_date = "2025-08-01"
+
+[vars]
+# Public CORS note: Harbour Lane only in Phase 0. Allowlist is enforced via
+# beacon_sites.allowed_origins + Origin header check, not this var.
+BEACON_SCHEMA_VERSION_DEFAULT = "1"
+
+# Secrets (wrangler secret put):
+#   SUPABASE_URL
+#   SUPABASE_SERVICE_ROLE_KEY

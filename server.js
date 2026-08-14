@@ -9,6 +9,7 @@
  * Bind: process.env.PORT only (Render requirement).
  */
 import express from "express";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -22,6 +23,8 @@ if (!Number.isFinite(PORT) || PORT <= 0) {
 }
 
 const PROBE_LOG_KEY = process.env.PROBE_LOG_KEY || "phase0-change-me";
+const BEACON_SITE_KEY = process.env.BEACON_SITE_KEY || "";
+const BEACON_ENDPOINT = process.env.BEACON_ENDPOINT || "";
 const MAX_LOG = 5_000;
 
 /** @type {Array<{ t: string, ms: number, method: string, path: string, ua: string|null, ip: string|null, referer: string|null }>} */
@@ -116,6 +119,42 @@ app.get("/favicon.ico", (_req, res) => {
   res.setHeader("Cache-Control", "no-store");
   res.send(buf);
 });
+
+/**
+ * Checkout pages: inject beacon config when BEACON_SITE_KEY + BEACON_ENDPOINT
+ * are set. Site key is an issued merchant id (not a domain hash).
+ */
+function beaconBootstrapScript() {
+  if (!BEACON_SITE_KEY || !BEACON_ENDPOINT) return "";
+  const cfg = JSON.stringify({
+    siteKey: BEACON_SITE_KEY,
+    endpoint: BEACON_ENDPOINT,
+  });
+  return `<script>window.__AGENTAPT_BEACON__=${cfg};</script>\n`;
+}
+
+function serveCheckoutHtml(fileName) {
+  return (_req, res) => {
+    const filePath = path.join(PUBLIC, fileName);
+    fs.readFile(filePath, "utf8", (err, html) => {
+      if (err) {
+        res.status(500).type("text").send("checkout unavailable");
+        return;
+      }
+      const boot = beaconBootstrapScript();
+      const out = boot
+        ? html.replace(/<script src="\/probe\.js\?v=[^"]+"><\/script>/, `${boot}$&`)
+        : html;
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.setHeader("Cache-Control", "no-store");
+      res.send(out);
+    });
+  };
+}
+
+app.get("/checkout.html", serveCheckoutHtml("checkout.html"));
+app.get("/checkout-controlled.html", serveCheckoutHtml("checkout-controlled.html"));
+app.get("/checkout-typing-sim.html", serveCheckoutHtml("checkout-typing-sim.html"));
 
 app.use(
   express.static(PUBLIC, {

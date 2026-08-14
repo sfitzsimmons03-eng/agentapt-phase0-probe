@@ -1,8 +1,8 @@
 # Layer D — Lab sequence (form-fill signature)
 
-**Status:** Layer D **closed**. Gesture disqualifier **shipped** (v15). Next: beacon collector (Workers + Supabase) — audit scanner `src/lib/agent-traffic/` first.  
+**Status:** Layer D **closed**. Gesture disqualifier **shipped** (v15). Beacon first slice **in repo** (`beacon/` Worker + SQL) — deploy to scanner Supabase + Cloudflare next. Harbour Lane only (Phase 0).  
 **Harness:** [agentapt-phase0-probe](https://github.com/sfitzsimmons03-eng/agentapt-phase0-probe) · live `https://probe.agentapt.tech`  
-**Probe:** `probe.js` **v15** — unified gesture disqualifier is the **shipped verdict** (contextmenu / button===2 in fill span **or** trusted touch hold ≥400ms within 2000ms of paste). Windowless contextmenu-only kept as `sessionDisqualifiedContextMenuOnly` diagnostic.  
+**Probe:** `probe.js` **v16** — Layer D verdict + optional beacon POST when `__AGENTAPT_BEACON__` is injected.  
 **Date:** 2026-08-14  
 
 **iPhone — CLOSED, do not re-ask:** Antonello has an iPhone. **iOS long-press paste arm completed 2026-08-12** (Safari, plain checkout). Capture file: `ios_long_paste.json`. Result: paste 5/5, unattr 0, no `contextmenu`, verdict INCONCLUSIVE under **current** rule; `pointerHolds` long dwell ~842–1079 ms recorded raw. Proposed fix: gesture disqualifier (§4b′). No further iPhone availability question unless a *new* iOS arm is spec'd.
@@ -448,7 +448,26 @@ Note: clipboard values in this run were the probe version-check snippet pasted i
 | https://probe.agentapt.tech/checkout-controlled.html | React controlled + ZIP/phone rewrite |
 | https://probe.agentapt.tech/checkout-typing-sim.html | Paste → synthetic per-char keydowns |
 
-Retrieval: `__probeSave('tag')` / `__probeReset()` before clean arms. Prefer **fresh tab**; sessionStorage accumulates historical pages.
+Retrieval: `__probeSave('tag')` / `__probeReset()` before clean arms. Prefer **fresh tab**; sessionStorage accumulates historical pages. Confirm `probe.js?v=16`. Beacon: `__probeBeacon()` when Harbour Lane has `BEACON_*` env injected.
+
+---
+
+## 7a. Beacon first slice (Layer D ingest)
+
+**Parallel path.** Does not feed `agent-traffic/` / `ParsedRequest`. Contract: `Beacon_Ingest_Contract_v1.md` @ scanner `1126a20`.
+
+| Decision | Value |
+|----------|--------|
+| merchantId | Issued `site_key` (`beacon_sites`) |
+| Supabase | Scanner project, `beacon_*` tables |
+| Phase 0 origin | Harbour Lane only |
+| Event grain | One checkout fill session |
+| schemaVersion | Required on every event (`1`) |
+| Counters | Stored with verdict (re-derivable) |
+
+**Code:** `beacon/sql/001_beacon.sql`, `beacon/src/index.ts` (`POST /v1/beacon`), probe v16 emit, Render inject via `BEACON_SITE_KEY` + `BEACON_ENDPOINT`.
+
+**Deploy (human):** apply SQL → seed site_key → `wrangler secret` + deploy → set Render env → fill checkout → row in `beacon_events`.
 
 ---
 

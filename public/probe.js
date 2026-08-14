@@ -1,7 +1,9 @@
-/* AgentApt Phase 0 probe harness — v15
- * Capture-only. No network calls, no collector, no PII.
+/* AgentApt Phase 0 probe harness — v16
+ * Local capture always. Optional Layer D beacon POST when
+ * window.__AGENTAPT_BEACON__ = { siteKey, endpoint } is set (Harbour Lane Phase 0).
+ * No PII in beacon payload — verdict + counters only.
  * Must be loaded SYNCHRONOUSLY in <head> before any other script.
- * v15 ships the v14 unified gesture disqualifier as the session verdict.
+ * v15 shipped unified gesture disqualifier; v16 adds beacon emit.
  */
 (function () {
   'use strict';
@@ -43,6 +45,7 @@
     try { sessionStorage.setItem(KEY, raw); } catch (e) { /* quota — ignore */ }
     /* Survive tab close when agents dismiss the window before a download fires. */
     try { localStorage.setItem(KEY, raw); } catch (e) { /* quota / private — ignore */ }
+    try { maybeSendBeaconEvent(false); } catch (e) {}
   }
 
   var page = {
@@ -59,7 +62,10 @@
     layerD: null,
     pointerDownLog: [],
     pointerStream: [],
-    probeVersion: 15
+    probeVersion: 16,
+    beaconIdempotencyKey: null,
+    beaconSentAt: null,
+    beaconLastError: null
   };
   S.pages.push(page);
 
@@ -896,6 +902,120 @@
   addEventListener('beforeunload', function () { page.dwellMs = Date.now() - T0; save(); });
   setInterval(function () { page.dwellMs = Date.now() - T0; save(); }, 2000);
 
+  /* ---------- Layer D beacon (optional) ----------
+   * Config: window.__AGENTAPT_BEACON__ = { siteKey, endpoint }
+   * Payload: schemaVersion, counters, verdict — never clipboard / field values. */
+
+  function beaconConfig() {
+    try {
+      var c = window.__AGENTAPT_BEACON__;
+      if (!c || typeof c !== 'object') return null;
+      if (!c.siteKey || !c.endpoint) return null;
+      return { siteKey: String(c.siteKey), endpoint: String(c.endpoint) };
+    } catch (e) {
+      return null;
+    }
+  }
+  function newIdempotencyKey() {
+    try {
+      if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+    } catch (e) {}
+    return 'p-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 12);
+  }
+  function sharedFieldsWithContent() {
+    var n = 0;
+    var i;
+    for (i = 0; i < LAYER_D_SHARED.length; i++) {
+      var f = page.fields[LAYER_D_SHARED[i]];
+      if (f && (f.finalLength || 0) > 0) n++;
+    }
+    return n;
+  }
+  function beaconReady(force) {
+    var ld = page.layerD;
+    if (!ld) return false;
+    if (force) return true;
+    if (page.beaconSentAt) return false;
+    if (ld.fillFirstFocusAt == null) return false;
+    if (ld.fillLastPasteAt != null) return true;
+    return sharedFieldsWithContent() >= 4;
+  }
+  function buildDisqualifyReasons(ld) {
+    var reasons = [];
+    if ((ld.contextMenuCountInFill || 0) > 0) reasons.push('contextmenu');
+    if ((ld.pointerRightCountInFill || 0) > 0) reasons.push('pointer-right');
+    if ((ld.longTouchHoldsInFill || []).length > 0) reasons.push('long-touch-hold');
+    return reasons;
+  }
+  function buildBeaconPayload(cfg) {
+    var ld = page.layerD;
+    if (!ld) return null;
+    if (!page.beaconIdempotencyKey) page.beaconIdempotencyKey = newIdempotencyKey();
+    return {
+      schemaVersion: '1',
+      provenance: 'layer-d-behavioural',
+      idempotencyKey: page.beaconIdempotencyKey,
+      merchantId: cfg.siteKey,
+      occurredAt: new Date().toISOString(),
+      page: {
+        origin: location.origin,
+        path: PAGE
+      },
+      layerD: {
+        pasteFields: ld.pasteFields || 0,
+        unattributedKeydowns: ld.unattributedKeydowns || 0,
+        necessaryPass: !!ld.necessaryPass,
+        sessionDisqualified: !!ld.sessionDisqualified,
+        disqualifyReasons: buildDisqualifyReasons(ld),
+        contextMenuCountInFill: ld.contextMenuCountInFill || 0,
+        pointerRightCountInFill: ld.pointerRightCountInFill || 0,
+        longTouchHoldCount: (ld.longTouchHoldsInFill || []).length,
+        verdict: ld.verdict || 'inconclusive'
+      }
+    };
+  }
+  function maybeSendBeaconEvent(force) {
+    var cfg = beaconConfig();
+    if (!cfg) return;
+    if (!beaconReady(force)) return;
+    if (page.beaconSentAt && !force) return;
+    /* Force after already-sent: still same idempotency key → Worker replay. */
+    var payload = buildBeaconPayload(cfg);
+    if (!payload) return;
+    page.beaconSentAt = Date.now() - T0;
+    saveQuiet();
+    var body = JSON.stringify(payload);
+    try {
+      fetch(cfg.endpoint, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: body,
+        keepalive: true,
+        mode: 'cors',
+        credentials: 'omit'
+      }).then(function (res) {
+        return res.json().then(function (j) {
+          page.beaconLastStatus = res.status;
+          page.beaconLastResponse = j;
+          if (!res.ok) page.beaconLastError = (j && j.error) || ('HTTP ' + res.status);
+          saveQuiet();
+        });
+      }).catch(function (err) {
+        page.beaconLastError = String(err && err.message ? err.message : err);
+        saveQuiet();
+      });
+    } catch (e) {
+      page.beaconLastError = String(e && e.message ? e.message : e);
+    }
+  }
+  function saveQuiet() {
+    /* Persist beacon status without re-entering maybeSendBeaconEvent. */
+    try { recomputeLayerD(); } catch (e) {}
+    var raw = JSON.stringify(S);
+    try { sessionStorage.setItem(KEY, raw); } catch (e) {}
+    try { localStorage.setItem(KEY, raw); } catch (e) {}
+  }
+
   /* ---------- retrieval ----------
    * No visible UI on purpose.
    *
@@ -914,6 +1034,7 @@
   window.__probeSave = function (reason) {
     try { page.dwellMs = Date.now() - T0; } catch (e) {}
     save();
+    try { maybeSendBeaconEvent(true); } catch (e) {}
     var data = window.__probeDump();
     if (!data) return;
     var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -923,6 +1044,19 @@
     a.download = 'probe-' + tag + '-' + Date.now() + '.json';
     a.click();
     try { URL.revokeObjectURL(a.href); } catch (e) {}
+  };
+  window.__probeBeacon = function () {
+    try { recomputeLayerD(); } catch (e) {}
+    maybeSendBeaconEvent(true);
+    return {
+      config: beaconConfig(),
+      sentAt: page.beaconSentAt,
+      idempotencyKey: page.beaconIdempotencyKey,
+      lastStatus: page.beaconLastStatus || null,
+      lastResponse: page.beaconLastResponse || null,
+      lastError: page.beaconLastError || null,
+      layerD: page.layerD
+    };
   };
   window.__probeReset = function () {
     try { sessionStorage.removeItem(KEY); } catch (e) {}
