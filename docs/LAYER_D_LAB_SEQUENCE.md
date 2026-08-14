@@ -1,8 +1,8 @@
 # Layer D — Lab sequence (form-fill signature)
 
-**Status:** v14 gesture diagnostic shipped locally. **Chrome G3 clean re-run pending** (desktop). Collector parked.  
+**Status:** Arm G + G3 clean **done**. Layer D position strong enough for collector (see §7). v14 gesture diagnostic live. iPhone **closed**.  
 **Harness:** [agentapt-phase0-probe](https://github.com/sfitzsimmons03-eng/agentapt-phase0-probe) · live `https://probe.agentapt.tech`  
-**Probe:** `probe.js` **v14** — windowless session disqualifier = **shipped verdict**; `gestureVerdict` + full `pointerStream` = **diagnostic**  
+**Probe:** `probe.js` **v14** — windowless session disqualifier = **shipped verdict**; `gestureVerdict` + `pointerStream` = **diagnostic**  
 **Date:** 2026-08-14  
 
 **iPhone — CLOSED, do not re-ask:** Antonello has an iPhone. **iOS long-press paste arm completed 2026-08-12** (Safari, plain checkout). Capture file: `ios_long_paste.json`. Result: paste 5/5, unattr 0, no `contextmenu`, verdict INCONCLUSIVE under **current** rule; `pointerHolds` long dwell ~842–1079 ms recorded raw. Proposed fix: gesture disqualifier (§4b′). No further iPhone availability question unless a *new* iOS arm is spec'd.
@@ -79,25 +79,13 @@ Phone is **instrumented but out of necessary-condition scope**. It **does** coun
 
 **Capture (v14):** page-level `pointerStream` (document-wide pointerdown/up/click/contextmenu, max 400); per-field `pointerStream`; `pasteDetails.pointerStreamWideBeforePaste` (5s window); `layerD.gestureVerdict` / `sessionGestureDisqualified` / `longTouchHoldsInFill` (diagnostic — long touch hold ≥400ms within 2000ms of paste). **Shipped verdict unchanged** (contextmenu + button===2 only).
 
-### Arm G3 clean re-run (next — desktop Chrome)
+### Arm G3 clean re-run — **done 2026-08-14**
 
-**Why:** first G3 cleared only via 3 stray contextmenus on email. Clean run tests whether desktop Chrome autofill is genuinely INCONCLUSIVE (merchant-poisoning FP) or has a capturable trusted mouse gesture (dropdown click).
+**Result:** paste **0/5**, unattr **5**, bulk `input`-only fill ~14 ms, `contextMenuCountInFill=0`, verdict **`not-agent-necessary-fail`**. Common Chrome path is **safe by construction** (like Bitwarden) — no gesture disqualifier needed for this path.
 
-**Setup:** deploy v14. Fresh tab. **`__probeReset()`**. Chrome desktop — **not** iOS. Address saved in Chrome autofill settings.
+**Chrome version check (both G3 captures):** **Chrome/150.0.0.0** on both original and clean runs — same version, same machine. Version change is **not** the trigger for the two paths.
 
-**Method:** click each field → pick Chrome autofill suggestion. **No right-clicks. No DevTools during fill.** One continuous fill, ~30s max.
-
-**Save:** `__probeSave('pwm-g3-chrome-clean')`
-
-**Read in JSON:**
-- `layerD.verdict` vs `layerD.gestureVerdict`
-- `layerD.contextMenuCountInFill` (must be **0**)
-- per-field `pasteDetails[0].pointerStreamWideBeforePaste` — full pointer stream around each paste
-- per-field `pasteDetails[0].trustedPointerDownsBeforePaste`
-
-**Either outcome is decisive:**
-- Trusted gesture before paste → third gesture shape; disqualifier generalises.
-- No usable gesture + necessary pass → **accepted, quantified FP class** (common desktop autofill indistinguishable from agent).
+**Live question:** first G3 (same Chrome) showed paste **5/5**. Two autofill paths exist; **trigger unidentified**, not reproducible on demand as of 14 Aug. Bounded repro attempts (2–3) optional; if not reproduced, log as stated limit — unknown frequency, not a collector blocker.
 
 **Pointer-capture health (CLOSED — do not re-block on this):** macOS human context-menu arm had `pointerHolds` populated (~83–116 ms) while `button===2` stayed 0 → capture alive; macOS Chrome simply does not set button 2 on that path. iOS arm then recorded long touch dwells ~842–1079 ms. Not silent-dead instrumentation.
 
@@ -170,13 +158,23 @@ Android long-press is expected to fire `contextmenu` (disqualifier should catch 
 
 State explicitly. Do not pretend the rule covers them.
 
-### 4a. False positive — Chrome programmatic-paste autofill
+### 4a. Chrome autofill — two observed paths (same browser)
 
-**Shape:** browser built-in address/payment autofill fires synthetic **`paste`** with no preceding keystrokes.
+**Do not list Bitwarden and Chrome together.** Same broad category (fill helpers), opposite default mechanics.
 
-**Measured (Arm G3, 2026-08-14):** paste **5/5**, unattr **2**, `necessaryPass=true`. All fields: **`paste` events**. Clean counterfactual (no session menu noise): **INCONCLUSIVE** — byte-identical necessary shape to Comet plain.
+#### 4a-i. Common path — input-only (safe by construction)
 
-**Bound:** accepted FP class for ticket until gesture disqualifier covers it (contextmenu / pointer right-click on desktop — not touch-hold). **“Browser autofill is safe” was never true as a class.**
+**Measured (G3 clean, 2026-08-14, v14):** paste **0/5**, unattr **5**, bulk fill ~14 ms, all fields **`input` only**. Verdict **`not-agent-necessary-fail`**. Trusted mouse click on email before fill; Chrome dropdown selection **not visible** in page pointerStream (browser UI outside DOM).
+
+**Read:** default/common Chrome autofill path fails necessary — **no gesture disqualifier needed**.
+
+#### 4a-ii. Observed programmatic-paste path (unreproduced)
+
+**Measured (G3 original, 2026-08-14):** paste **5/5**, unattr **2**, `necessaryPass=true`. Counterfactual without session menu noise: **INCONCLUSIVE** (Comet shape).
+
+**Chrome/150.0.0.0 on both captures** — version is not the differentiator.
+
+**Bound for ticket:** programmatic-paste path **observed once**, trigger **unidentified**, frequency **unknown**, **not reproducible on demand** as of 14 Aug 2026. Stated limit — worse if unpredictable, but not a collector blocker. Plausible triggers to eliminate if repro attempted: autofill surface (address vs payment vs single-field), field type, prior form submission from profile.
 
 ### 4a′. Safe by construction — Bitwarden input-only autofill
 
@@ -184,7 +182,7 @@ State explicitly. Do not pretend the rule covers them.
 
 **Measured (Arm G1b, 2026-08-13):** paste **0/5**, unattr **10**, verdict **`not-agent-necessary-fail`**. Structurally invisible to paste gate. Safe error direction (under-report).
 
-**Do not conflate with §4a.** Same tool category (password manager), opposite event mechanics. Input-only is **per-extension** — 1Password may differ; Chrome autofill already differs.
+**Do not conflate with §4a.** Input-only is **per-extension / per-path** — Chrome has both input-only (common) and paste (observed once).
 
 ### 4a″. Design failure mode — input-only fill (agent or human)
 
@@ -226,7 +224,7 @@ State explicitly. Do not pretend the rule covers them.
 | Comet plain v10 | **0/5** | holds ~0–2 ms mouse only — **safe** |
 | Comet masked v10 | **0/5** | safe |
 | Arm F context-menu | **0/5** | holds ~99–184 ms; already disqualified via `contextmenu` |
-| Chrome autofill G3 | **0/5** | short mouse holds only — **still INCONCLUSIVE clean**; needs contextmenu/pointer-right path |
+| Chrome autofill G3 | **0/5** | short mouse holds only — **not-agent-necessary-fail** on clean path |
 
 **Status:** hypothesis validated on stored arms for iOS + Comet. Implement as probe diagnostic (v14) before collector. If any Comet arm ever shows trusted long touch hold, abandon approach.
 
@@ -321,7 +319,7 @@ Inter-paste gaps: 4538 / 5807 / 5577 / 6021 ms.
 
 **Read:** necessary conditions match Comet (paste 5/5, unattr 0). **Windowless session rule adopted as the verdict path** (`contextMenuCountInFill=5` → `not-agent-disqualifier`). Per-field 2000ms retired from verdict — diagnostic only. Observed menu→paste gaps span 1412–2929 ms with address at 1997 ms (3 ms inside) and v10 email at 2010 ms (10 ms outside); constant sits in the middle of human distribution, not between populations — do not retune.
 
-**Not run / deferred:** Chrome autofill (G3), 1Password native autofill (G1 spec), pointer sanity (v13), Android / Windows (Fitz), Kitesurf (§8), collector.
+**Not run / deferred:** 1Password native autofill (G1 spec, optional), bounded Chrome paste-path repro (2–3 tries max), Android / Windows (Fitz), Kitesurf (§8).
 
 ---
 
@@ -336,7 +334,7 @@ Necessary: paste ≥4/5, unattr ≤3. Disqualifier: zero `contextmenu` / button=
 | **G1** | 1Password extension inline autofill (not copy-from-vault) | **open** — different fill path than Bitwarden; user may not have license |
 | **G1b** | Bitwarden extension inline autofill | **done 2026-08-13** — input-only, see below |
 | **G2** | Vault → copy → ⌘V (Bitwarden stand-in for 1Password G2) | **done** — Maccy control confirmed |
-| **G3** | **Chrome built-in address/payment autofill** | **done 2026-08-14** — paste 5/5, see below |
+| **G3** | **Chrome built-in address autofill** | **done** — two paths: input-only (clean) + paste (original); see below |
 
 **Record per arm:** `pasteFields`, `unattributedKeydowns`, `contextMenuCountInFill`, `pointerRightCountInFill`, `layerD.verdict`. **Per field:** `pastes` vs `events` (input) with no paste.
 
@@ -369,24 +367,34 @@ All fields: **`paste` events present.** Confirms autofill and ⌘V are **differe
 
 ### Arm G results — Chrome autofill (2026-08-14)
 
-**G3 — Chrome built-in autofill**
+**G3 original — programmatic paste (session noise on email)**
 
 | Signal | Result |
 |--------|--------|
 | paste | **5/5** |
-| unattributed keydowns | **2** (email only) |
+| unattributed keydowns | **2** |
 | `necessaryPass` | **true** |
-| contextMenuCountInFill | **3** (all on `email`, before paste — session noise) |
-| pointerRightCountInFill | **2** |
+| contextMenuCountInFill | **3** (stray, on email) |
 | verdict (as captured) | **`not-agent-disqualifier`** |
+| Chrome | **150.0.0.0** |
 
-Per field: **`paste` event on all five** (`pasteObserved=true`, `pasteDetails` with clipboard). **Not input-only** — opposite of Bitwarden.
+Counterfactual without menus: **INCONCLUSIVE**. Per field: **`paste` events**.
 
-Individual pastes had **`contextMenuBefore: false`** — menus in session were exploratory clicks on email, not the autofill path. **Counterfactual verdict without those menus: INCONCLUSIVE** (same shape as Comet: paste 5/5, unattr ≤3, no disqualifier).
+**G3 clean — input-only bulk fill (v14)**
 
-**Read:** Chrome autofill **can land on the agent signature** under Layer D. This is the programmatic-paste FP class (§4a), not safe-by-construction. Bitwarden input-only result does **not** generalise to Chrome. Class **not closed** without 1Password native autofill (different implementation again).
+| Signal | Result |
+|--------|--------|
+| paste | **0/5** |
+| unattributed keydowns | **5** |
+| `necessaryPass` | **false** |
+| contextMenuCountInFill | **0** |
+| verdict | **`not-agent-necessary-fail`** |
+| Chrome | **150.0.0.0** |
+| fill mechanics | all **`input` only**, bulk ~14 ms |
 
-Capture note: fill values in this run were phone-like strings (Chrome profile quirk); event mechanics unaffected.
+Trusted mouse click on email (~90 ms); dropdown click not in page pointerStream.
+
+**Read:** common Chrome path **safe by construction**. Paste path **observed once**, trigger unknown, same Chrome version. **Not “Chrome is an FP class”** — **“what selects the paste path?”** is the live residual. No further arms required unless bounded repro (2–3 tries) is explicitly queued.
 
 ### Pointer sanity (2026-08-14, v13)
 
@@ -434,7 +442,7 @@ Note: clipboard values in this run were the probe version-check snippet pasted i
 | https://probe.agentapt.tech/checkout-controlled.html | React controlled + ZIP/phone rewrite |
 | https://probe.agentapt.tech/checkout-typing-sim.html | Paste → synthetic per-char keydowns |
 
-Retrieval: `__probeSave('tag')` / `__probeReset()` before clean arms. Prefer fresh session; sessionStorage accumulates historical pages. Confirm `probe.js?v=14` before G3 clean re-run.
+Retrieval: `__probeSave('tag')` / `__probeReset()` before clean arms. Prefer **fresh tab**; sessionStorage accumulates historical pages.
 
 ---
 
@@ -447,11 +455,23 @@ Retrieval: `__probeSave('tag')` / `__probeReset()` before clean arms. Prefer fre
 3. Structural **session-level disqualifier (windowless):** any contextmenu / button===2 between first field focus and last paste → whole session not-agent. Per-field 2000ms lookback is diagnostic only.
 4. Necessary pass + silence → **INCONCLUSIVE** (never assert agent-detected).
 5. Re-check zero-contextmenu assumption against every new agent in the matrix.
-6. Documented FP residual: **Chrome autofill programmatic paste** (paste 5/5, unattr ≤3 — INCONCLUSIVE without disqualifier); other managers may synthesize paste (1Password open); iOS long-press disqualifier gap (iPhone arm **done** 2026-08-12; hold hypothesis open, not a shipped rule).
-7. Documented FN: agents that **type** instead of paste; agents that **inject input-only** (same shape as Bitwarden autofill — Layer D returns not-agent and goes blind if agents adopt this path); agents that synthesize contextmenu (self-disqualify — accepted error direction).
+6. Documented FP residual: Chrome autofill **programmatic-paste path** (observed once G3 original, trigger unknown, frequency unknown, Chrome/150 on both captures); iOS long-press → **touch-hold gesture disqualifier** (back-test: iOS 5/5, Comet 0/5); 1Password open.
+7. Documented FN: agents that **type** or **inject input-only**; agents that synthesize contextmenu (self-disqualify).
 8. Install: theme embed / page script only — not a Shopify web pixel.
 
-**Input-only blind spot (ticket must state):** Layer D necessary conditions require paste. Human/extension paths that fill via DOM `input` only are undetectable and currently score **not-agent-necessary-fail** — safe error direction for humans, **silent false negative** if agents switch from paste to input-only injection. Observed on Bitwarden extension autofill; not proven universal across managers or Chrome autofill until G3/G1 complete.
+**Human classes — structural coverage (2026-08-14):**
+
+| Class | Mechanism | Layer D today |
+|-------|-----------|---------------|
+| Desktop context-menu paste | `contextmenu` | windowless disqualifier ✓ |
+| iOS long-press paste | touch hold ~900 ms | gesture diagnostic ✓ (v14 back-test) |
+| Bitwarden extension autofill | input-only | fails necessary ✓ |
+| Chrome autofill (common path) | input-only bulk | fails necessary ✓ |
+| Chrome autofill (rare path) | programmatic paste | INCONCLUSIVE if hit — **observed once, trigger unknown** |
+
+**Three of four human classes structurally handled.** Strong enough position to build collector on.
+
+**Input-only blind spot (ticket must state):** Layer D necessary conditions require paste. Input-only paths (Bitwarden, Chrome common) score **not-agent-necessary-fail** — safe for humans; **silent FN** if agents adopt input-only injection.
 
 **Do not:** raise raw keydown caps to swallow masks; move primary onto fill span; retune 2000ms lookback; treat Maccy/⌘V as the residual FP (it fails necessary conditions); read phone into the necessary shared-five sum; claim agent from paste+unattr alone; start collector before this contract is accepted.
 
