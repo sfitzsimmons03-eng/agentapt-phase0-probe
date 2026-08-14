@@ -1,8 +1,8 @@
 # Layer D — Lab sequence (form-fill signature)
 
-**Status:** Arm G + G3 clean **done**. Layer D position strong enough for collector (see §7). v14 gesture diagnostic live. iPhone **closed**.  
+**Status:** Layer D **closed**. Gesture disqualifier **shipped** (v15). Next: beacon collector (Workers + Supabase) — audit scanner `src/lib/agent-traffic/` first.  
 **Harness:** [agentapt-phase0-probe](https://github.com/sfitzsimmons03-eng/agentapt-phase0-probe) · live `https://probe.agentapt.tech`  
-**Probe:** `probe.js` **v14** — windowless session disqualifier = **shipped verdict**; `gestureVerdict` + `pointerStream` = **diagnostic**  
+**Probe:** `probe.js` **v15** — unified gesture disqualifier is the **shipped verdict** (contextmenu / button===2 in fill span **or** trusted touch hold ≥400ms within 2000ms of paste). Windowless contextmenu-only kept as `sessionDisqualifiedContextMenuOnly` diagnostic.  
 **Date:** 2026-08-14  
 
 **iPhone — CLOSED, do not re-ask:** Antonello has an iPhone. **iOS long-press paste arm completed 2026-08-12** (Safari, plain checkout). Capture file: `ios_long_paste.json`. Result: paste 5/5, unattr 0, no `contextmenu`, verdict INCONCLUSIVE under **current** rule; `pointerHolds` long dwell ~842–1079 ms recorded raw. Proposed fix: gesture disqualifier (§4b′). No further iPhone availability question unless a *new* iOS arm is spec'd.
@@ -10,6 +10,8 @@
 **Scope:** Behavioural fill detection only (Layer D). Layers A/B/C out of scope here.
 
 **Process note:** future arms must state the exact measurement interval they perturb and confirm the run actually perturbs it before execution. Arms E and F were both derivable from §7 before being written; F validated the windowless path Claude now adopts.
+
+**Back-test first:** any future rule change is tested against **stored captures** before a new arm is run. That is what made the iOS/Comet gesture check cheap (iOS 5/5 disqualified, Comet 0/5, no new sessions). New arms only after the stored set cannot answer the question.
 
 This document is the evidence base for a detection-layer ticket. Write the ticket against these numbers and bounds — not against a re-tuned threshold.
 
@@ -33,11 +35,15 @@ NECESSARY (not sufficient):
   AND
   sum(keydownsUnattributed) across those fields <= 3
 
-DISQUALIFIER (structural, SESSION-LEVEL, WINDOWLESS):
-  if ANY contextmenu OR pointerdown(button===2) occurs on a form
-  control between first field focus and last paste of the fill
+DISQUALIFIER (structural, UNIFIED GESTURE, v15 shipped):
+  if ANY of the following on a form control in the fill:
+    - contextmenu OR pointerdown(button===2) between first
+      field focus and last paste (windowless fill span)
+    - trusted pointerType=touch hold dwell ≥ 400ms with
+      pointerup within 2000ms before that field's paste
   → the WHOLE SESSION is not-agent
-  Per-field 2000ms lookback is DIAGNOSTIC ONLY — not used for verdict.
+  Per-field 2000ms contextmenu lookback is DIAGNOSTIC ONLY.
+  Contextmenu-only windowless kept as sessionDisqualifiedContextMenuOnly.
 
 VERDICT:
   necessary fails                         → not agent
@@ -73,11 +79,11 @@ Phone is **instrumented but out of necessary-condition scope**. It **does** coun
 
 **Why this shape (not fill span as primary):** fill span is continuous and fragile. Keep paste+unattr as necessary; structural windowless session disqualifier for context-menu humans; silence → INCONCLUSIVE.
 
-**Corroboration only:** fill span / clicks. `pointerHolds` raw for iOS — no hold rule yet.
+**Corroboration only:** fill span / clicks. Touch-hold is now in the shipped disqualifier (v15), not raw-only.
 
 **Paste survival:** `pasteObserved`, `exactMatch` / `digitsMatch` kept.
 
-**Capture (v14):** page-level `pointerStream` (document-wide pointerdown/up/click/contextmenu, max 400); per-field `pointerStream`; `pasteDetails.pointerStreamWideBeforePaste` (5s window); `layerD.gestureVerdict` / `sessionGestureDisqualified` / `longTouchHoldsInFill` (diagnostic — long touch hold ≥400ms within 2000ms of paste). **Shipped verdict unchanged** (contextmenu + button===2 only).
+**Capture (v15):** page-level `pointerStream`; per-field `pointerStream`; `pasteDetails.pointerStreamWideBeforePaste`; **`layerD.verdict` uses unified gesture disqualifier** (contextmenu / button===2 in fill span **or** trusted touch hold ≥400ms within 2000ms of paste). Diagnostic: `sessionDisqualifiedContextMenuOnly`, `gestureDisqualifiedFields`, `longTouchHoldsInFill`. `gestureVerdict` aliases `verdict`.
 
 ### Arm G3 clean re-run — **done 2026-08-14**
 
@@ -214,7 +220,7 @@ State explicitly. Do not pretend the rule covers them.
 
 **Disqualifier already in capture:** every shared field shows **two** `pointerHolds` — short focus tap (~74–180 ms), then long touch hold **842–1079 ms** (`pointerType: touch`, `trusted: true`) immediately before paste. Four of five long holds cluster **925–938 ms**. Comet fill: **no** comparable holds (mouse focus clicks ~0–2 ms only).
 
-**Proposed extension (not yet in probe verdict):** disqualify on **trusted pointer gesture immediately preceding paste** — desktop: `contextmenu` / `pointerdown(button===2)`; iOS: **trusted touch hold** with dwell ≥ ~400 ms within lookback of paste. Structural, not threshold — agent cannot manufacture trusted touch down/up with ~900 ms dwell.
+**Proposed extension (SHIPPED v15):** disqualify on **trusted pointer gesture immediately preceding paste** — desktop: `contextmenu` / `pointerdown(button===2)` in fill span; iOS: **trusted touch hold** with dwell ≥ 400 ms within 2000 ms of paste. Structural, not threshold — agent cannot manufacture trusted touch down/up with ~900 ms dwell. Back-tested on stored JSON before shipping (table below). If any Comet arm ever shows trusted long touch hold, abandon approach.
 
 **Back-test on stored JSON (draft rule: touch hold dwell ≥400 ms, gap hold-up → paste ≤2000 ms):**
 
@@ -226,7 +232,7 @@ State explicitly. Do not pretend the rule covers them.
 | Arm F context-menu | **0/5** | holds ~99–184 ms; already disqualified via `contextmenu` |
 | Chrome autofill G3 | **0/5** | short mouse holds only — **not-agent-necessary-fail** on clean path |
 
-**Status:** hypothesis validated on stored arms for iOS + Comet. Implement as probe diagnostic (v14) before collector. If any Comet arm ever shows trusted long touch hold, abandon approach.
+**Status:** **shipped v15.** Back-tested on stored arms (iOS 5/5, Comet 0/5). Touch-hold and contextmenu are one mechanism.
 
 ### 4c. False negative — agent that types instead of pastes
 
@@ -408,7 +414,7 @@ Dedicated arm: one right-click → Paste on `email`.
 
 **Closed:** pointer capture is not silent-dead. macOS Chrome is inconsistent on `button===2` timing/path; session windowless rule also counts `contextmenu`. iOS pointer traces from 2026-08-12 remain valid.
 
-**Setup:** warm `https://probe.agentapt.tech/checkout.html`. **`__probeReset()` before each arm.** Confirm `probe.js?v=13`.
+**Setup:** warm `https://probe.agentapt.tech/checkout.html`. **`__probeReset()` before each arm.** Confirm `probe.js?v=15`.
 
 ### iOS long-press paste (2026-08-12, Safari iPhone)
 
@@ -422,13 +428,13 @@ UA: iPhone OS 18_7 / AppleWebKit — plain `/checkout.html`.
 | pointerDownRight (button===2) | **0** |
 | pasteDisqualified | **0/5** |
 | fill span | ~14203 ms |
-| Verdict under current rule | **INCONCLUSIVE** (necessary pass, no disqualifier) |
+| Verdict under current rule | **`not-agent-disqualifier` (v15)** — necessary pass + trusted touch holds; was INCONCLUSIVE under contextmenu-only |
 
 **Raw `pointerHolds` (the reason item 3 exists):** every shared field shows **two** touch holds — a short tap (~74–180 ms) then a long press (~842–1079 ms, median long ~925–938). Long-press `pointerup` ends ~940–1045 ms before the paste. `pointerType: touch`, `button: 0`, `trusted: true`.
 
 Compare Comet v10 holds on the same fields: dwell **~0–2 ms** (focus clicks only).
 
-**Read:** desktop/Android-style contextmenu disqualifier does **not** catch iOS. The long-touch dwell before paste is a real, measurable separator in this one sample — still a **hypothesis for a future rule**, not a shipped gate. Do not promote hold-duration to primary without more traces (and confirm it does not false-positive on slow human taps).
+**Read:** desktop/Android-style contextmenu disqualifier does **not** catch iOS. The long-touch dwell is now the **shipped** iOS arm of the unified gesture disqualifier (v15). Do not retune 400ms from this one sample without more traces.
 
 Note: clipboard values in this run were the probe version-check snippet pasted into every field — fine for event signature, ignore content.
 
@@ -452,7 +458,7 @@ Retrieval: `__probeSave('tag')` / `__probeReset()` before clean arms. Prefer **f
 
 1. Paste presence on ≥4 of 5 address fields as a **necessary** condition (not sufficient).
 2. Unattributed keydown sum (paste-window attribution, 500ms) as a **necessary** keydown gate — not raw totals.
-3. Structural **session-level disqualifier (windowless):** any contextmenu / button===2 between first field focus and last paste → whole session not-agent. Per-field 2000ms lookback is diagnostic only.
+3. Structural **unified gesture disqualifier:** contextmenu / button===2 in fill span **or** trusted touch hold ≥400ms within 2000ms of paste → whole session not-agent. Per-field 2000ms lookback diagnostic only.
 4. Necessary pass + silence → **INCONCLUSIVE** (never assert agent-detected).
 5. Re-check zero-contextmenu assumption against every new agent in the matrix.
 6. Documented FP residual: Chrome autofill **programmatic-paste path** (observed once G3 original, trigger unknown, frequency unknown, Chrome/150 on both captures); iOS long-press → **touch-hold gesture disqualifier** (back-test: iOS 5/5, Comet 0/5); 1Password open.
@@ -464,7 +470,7 @@ Retrieval: `__probeSave('tag')` / `__probeReset()` before clean arms. Prefer **f
 | Class | Mechanism | Layer D today |
 |-------|-----------|---------------|
 | Desktop context-menu paste | `contextmenu` | windowless disqualifier ✓ |
-| iOS long-press paste | touch hold ~900 ms | gesture diagnostic ✓ (v14 back-test) |
+| iOS long-press paste | touch hold ~900 ms | unified gesture disqualifier ✓ (v15, back-test iOS 5/5 Comet 0/5) |
 | Bitwarden extension autofill | input-only | fails necessary ✓ |
 | Chrome autofill (common path) | input-only bulk | fails necessary ✓ |
 | Chrome autofill (rare path) | programmatic paste | INCONCLUSIVE if hit — **observed once, trigger unknown** |

@@ -1,6 +1,7 @@
-/* AgentApt Phase 0 probe harness — v14
+/* AgentApt Phase 0 probe harness — v15
  * Capture-only. No network calls, no collector, no PII.
  * Must be loaded SYNCHRONOUSLY in <head> before any other script.
+ * v15 ships the v14 unified gesture disqualifier as the session verdict.
  */
 (function () {
   'use strict';
@@ -58,7 +59,7 @@
     layerD: null,
     pointerDownLog: [],
     pointerStream: [],
-    probeVersion: 14
+    probeVersion: 15
   };
   S.pages.push(page);
 
@@ -368,7 +369,8 @@
    * Session verdict no longer uses this window (see recomputeLayerD).
    * Kept so Arm F can compare per-field vs windowless session rules. */
   var PASTE_CONTEXT_LOOKBACK_MS = 2000;
-  /* Gesture disqualifier (v14 diagnostic — not yet the shipped verdict). */
+  /* Gesture disqualifier (v14 shipped): contextmenu / button===2 in fill
+   * span OR trusted touch hold ≥400ms within 2000ms before paste. */
   var GESTURE_TOUCH_HOLD_MIN_MS = 400;
   var GESTURE_LOOKBACK_MS = 2000;
   var POINTER_STREAM_MAX = 400;
@@ -438,8 +440,8 @@
     for (i = 0; i < allRights.length; i++) {
       if (inFillWindow(allRights[i].at)) rightsInFill.push(allRights[i]);
     }
-    var sessionDisqualified = menusInFill.length > 0 || rightsInFill.length > 0;
-    /* v14 diagnostic: gesture disqualifier (contextmenu, button===2, long touch hold). */
+    var sessionDisqualifiedContextMenuOnly = menusInFill.length > 0 || rightsInFill.length > 0;
+    /* v14 shipped: unified gesture disqualifier. */
     var gestureDisqualifiedFields = [];
     var longTouchHoldsInFill = [];
     for (i = 0; i < LAYER_D_SHARED.length; i++) {
@@ -459,9 +461,10 @@
       if (fieldGesture) gestureDisqualifiedFields.push(name);
     }
     var sessionGestureDisqualified =
-      sessionDisqualified ||
+      sessionDisqualifiedContextMenuOnly ||
       gestureDisqualifiedFields.length > 0 ||
       longTouchHoldsInFill.length > 0;
+    var sessionDisqualified = sessionGestureDisqualified;
     /* Old path: per-field lookback hit on any field (diagnostic compare). */
     var sessionDisqualifiedPerFieldLookback = disqualifiedFields.length > 0;
 
@@ -470,10 +473,7 @@
     else if (sessionDisqualified) verdict = 'not-agent-disqualifier';
     else verdict = 'inconclusive';
 
-    var gestureVerdict;
-    if (!necessaryPass) gestureVerdict = 'not-agent-necessary-fail';
-    else if (sessionGestureDisqualified) gestureVerdict = 'not-agent-gesture-disqualifier';
-    else gestureVerdict = 'inconclusive';
+    var gestureVerdict = verdict;
 
     page.layerD = {
       sharedFields: LAYER_D_SHARED.slice(),
@@ -491,13 +491,14 @@
       contextMenuCountInFill: menusInFill.length,
       pointerRightCountInFill: rightsInFill.length,
       sessionDisqualified: sessionDisqualified,
+      sessionDisqualifiedContextMenuOnly: sessionDisqualifiedContextMenuOnly,
       sessionDisqualifiedPerFieldLookback: sessionDisqualifiedPerFieldLookback,
       /* Pointer-capture health counters. */
       pointerDownCount: pointerDownCount,
       pointerHoldCount: pointerHoldCount,
       pasteAttrWindowMs: PASTE_ATTR_WINDOW_MS,
       verdict: verdict,
-      /* v14 gesture disqualifier — diagnostic only; verdict above unchanged. */
+      /* v14 shipped: unified gesture disqualifier is `verdict`. */
       gestureTouchHoldMinMs: GESTURE_TOUCH_HOLD_MIN_MS,
       gestureLookbackMs: GESTURE_LOOKBACK_MS,
       gestureDisqualifiedFields: gestureDisqualifiedFields,
