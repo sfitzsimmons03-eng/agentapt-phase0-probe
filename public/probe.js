@@ -1,4 +1,4 @@
-/* AgentApt Phase 0 probe harness — v1
+/* AgentApt Phase 0 probe harness — v14
  * Capture-only. No network calls, no collector, no PII.
  * Must be loaded SYNCHRONOUSLY in <head> before any other script.
  */
@@ -56,7 +56,9 @@
     clicks: [],
     fields: {},
     layerD: null,
-    pointerDownLog: []
+    pointerDownLog: [],
+    pointerStream: [],
+    probeVersion: 14
   };
   S.pages.push(page);
 
@@ -366,6 +368,11 @@
    * Session verdict no longer uses this window (see recomputeLayerD).
    * Kept so Arm F can compare per-field vs windowless session rules. */
   var PASTE_CONTEXT_LOOKBACK_MS = 2000;
+  /* Gesture disqualifier (v14 diagnostic — not yet the shipped verdict). */
+  var GESTURE_TOUCH_HOLD_MIN_MS = 400;
+  var GESTURE_LOOKBACK_MS = 2000;
+  var POINTER_STREAM_MAX = 400;
+  var POINTER_STREAM_PASTE_WINDOW_MS = 5000;
   /* Harbour Lane shared address fields — necessary-condition scope. */
   var LAYER_D_SHARED = ['name', 'email', 'address', 'city', 'postcode'];
 
@@ -432,6 +439,29 @@
       if (inFillWindow(allRights[i].at)) rightsInFill.push(allRights[i]);
     }
     var sessionDisqualified = menusInFill.length > 0 || rightsInFill.length > 0;
+    /* v14 diagnostic: gesture disqualifier (contextmenu, button===2, long touch hold). */
+    var gestureDisqualifiedFields = [];
+    var longTouchHoldsInFill = [];
+    for (i = 0; i < LAYER_D_SHARED.length; i++) {
+      name = LAYER_D_SHARED[i];
+      f = fields[name];
+      if (!f || !f.lastPasteAt) continue;
+      var pasteAt = f.lastPasteAt;
+      if (!inFillWindow(pasteAt)) continue;
+      var hitLong = longTouchHoldBeforePaste(f, pasteAt);
+      if (hitLong) {
+        longTouchHoldsInFill.push({ field: name, at: hitLong.upAt, dwellMs: hitLong.dwellMs, pasteAt: pasteAt });
+      }
+      var fieldGesture = false;
+      if (anyInLookback(f.contextMenus || [], pasteAt, GESTURE_LOOKBACK_MS)) fieldGesture = true;
+      if (anyInLookback(f.pointerDownRight || [], pasteAt, GESTURE_LOOKBACK_MS)) fieldGesture = true;
+      if (hitLong) fieldGesture = true;
+      if (fieldGesture) gestureDisqualifiedFields.push(name);
+    }
+    var sessionGestureDisqualified =
+      sessionDisqualified ||
+      gestureDisqualifiedFields.length > 0 ||
+      longTouchHoldsInFill.length > 0;
     /* Old path: per-field lookback hit on any field (diagnostic compare). */
     var sessionDisqualifiedPerFieldLookback = disqualifiedFields.length > 0;
 
@@ -439,6 +469,11 @@
     if (!necessaryPass) verdict = 'not-agent-necessary-fail';
     else if (sessionDisqualified) verdict = 'not-agent-disqualifier';
     else verdict = 'inconclusive';
+
+    var gestureVerdict;
+    if (!necessaryPass) gestureVerdict = 'not-agent-necessary-fail';
+    else if (sessionGestureDisqualified) gestureVerdict = 'not-agent-gesture-disqualifier';
+    else gestureVerdict = 'inconclusive';
 
     page.layerD = {
       sharedFields: LAYER_D_SHARED.slice(),
@@ -461,7 +496,15 @@
       pointerDownCount: pointerDownCount,
       pointerHoldCount: pointerHoldCount,
       pasteAttrWindowMs: PASTE_ATTR_WINDOW_MS,
-      verdict: verdict
+      verdict: verdict,
+      /* v14 gesture disqualifier — diagnostic only; verdict above unchanged. */
+      gestureTouchHoldMinMs: GESTURE_TOUCH_HOLD_MIN_MS,
+      gestureLookbackMs: GESTURE_LOOKBACK_MS,
+      gestureDisqualifiedFields: gestureDisqualifiedFields,
+      longTouchHoldsInFill: longTouchHoldsInFill,
+      sessionGestureDisqualified: sessionGestureDisqualified,
+      gestureVerdict: gestureVerdict,
+      pointerStreamCount: (page.pointerStream || []).length
     };
   }
 
@@ -486,6 +529,8 @@
         pointerDownCount: 0,
         pointerHolds: [],
         openPointerDowns: [],
+        pointerStream: [],
+        gestureDisqualified: false,
         /* Diagnostic only — per-field 2000ms lookback. */
         pasteDisqualified: false,
         pasteDisqualifyReasons: []
@@ -517,6 +562,51 @@
     }
     return null;
   }
+  function targetDesc(el) {
+    if (!el || !el.tagName) return { tag: null };
+    var d = {
+      tag: el.tagName,
+      name: el.name || null,
+      id: el.id || null,
+      type: el.type || null
+    };
+    try {
+      if (el.getAttribute) d.role = el.getAttribute('role');
+      if (el.className) d.className = String(el.className).slice(0, 80);
+    } catch (err) {}
+    return d;
+  }
+  function pushPointerStream(entry) {
+    if (!page.pointerStream) page.pointerStream = [];
+    if (page.pointerStream.length >= POINTER_STREAM_MAX) page.pointerStream.shift();
+    page.pointerStream.push(entry);
+  }
+  function streamBeforeAt(at, windowMs, fieldName) {
+    var stream = page.pointerStream || [];
+    var out = [];
+    var i;
+    for (i = 0; i < stream.length; i++) {
+      var ev = stream[i];
+      if (ev.at > at) continue;
+      if ((at - ev.at) > windowMs) continue;
+      if (fieldName && ev.field && ev.field !== fieldName) continue;
+      out.push(ev);
+    }
+    return out;
+  }
+  function longTouchHoldBeforePaste(rec, pasteAt) {
+    var holds = rec.pointerHolds || [];
+    var i;
+    for (i = 0; i < holds.length; i++) {
+      var h = holds[i];
+      if (!h.trusted || h.pointerType !== 'touch') continue;
+      if ((h.dwellMs || 0) < GESTURE_TOUCH_HOLD_MIN_MS) continue;
+      var up = h.upAt != null ? h.upAt : h.at;
+      if (up == null || up > pasteAt) continue;
+      if ((pasteAt - up) <= GESTURE_LOOKBACK_MS) return h;
+    }
+    return null;
+  }
   function attachPasteDisqualify(rec, detail, pasteAt) {
     var hitMenu = anyInLookback(rec.contextMenus || [], pasteAt, PASTE_CONTEXT_LOOKBACK_MS);
     var hitRight = anyInLookback(rec.pointerDownRight || [], pasteAt, PASTE_CONTEXT_LOOKBACK_MS);
@@ -535,6 +625,33 @@
       }
       if (hitRight && rec.pasteDisqualifyReasons.indexOf('pointerdown-button-2') < 0) {
         rec.pasteDisqualifyReasons.push('pointerdown-button-2');
+      }
+    }
+  }
+  function attachGestureAnalysis(rec, detail, pasteAt, fieldName) {
+    attachPasteDisqualify(rec, detail, pasteAt);
+    var hitLongTouch = longTouchHoldBeforePaste(rec, pasteAt);
+    var streamField = streamBeforeAt(pasteAt, GESTURE_LOOKBACK_MS, fieldName);
+    var streamWide = streamBeforeAt(pasteAt, POINTER_STREAM_PASTE_WINDOW_MS, null);
+    detail.longTouchHoldBefore = !!hitLongTouch;
+    detail.longTouchHoldOffsetMs = hitLongTouch ? (pasteAt - hitLongTouch.upAt) : null;
+    detail.longTouchDwellMs = hitLongTouch ? hitLongTouch.dwellMs : null;
+    if (hitLongTouch && detail.disqualifyReasons.indexOf('long-touch-hold') < 0) {
+      detail.disqualifyReasons.push('long-touch-hold');
+    }
+    detail.gestureDisqualified = detail.disqualified || !!hitLongTouch;
+    detail.pointerStreamBeforePaste = streamField;
+    detail.pointerStreamWideBeforePaste = streamWide;
+    var trustedDowns = [];
+    var j;
+    for (j = 0; j < streamField.length; j++) {
+      if (streamField[j].type === 'pointerdown' && streamField[j].trusted) trustedDowns.push(streamField[j]);
+    }
+    detail.trustedPointerDownsBeforePaste = trustedDowns.length;
+    if (detail.gestureDisqualified) {
+      rec.gestureDisqualified = true;
+      if (hitLongTouch && rec.pasteDisqualifyReasons.indexOf('long-touch-hold') < 0) {
+        rec.pasteDisqualifyReasons.push('long-touch-hold');
       }
     }
   }
@@ -564,11 +681,23 @@
     save();
   }, true);
   addEventListener('contextmenu', function (e) {
-    if (!isFormControl(e.target)) return;
-    var el = e.target;
-    var rec = fieldRec(el);
     var t = Date.now() - T0;
-    var fname = el.name || el.id || el.type || 'field';
+    var el = e.target;
+    var onForm = isFormControl(el);
+    var fname = onForm ? (el.name || el.id || el.type || 'field') : null;
+    pushPointerStream({
+      at: t,
+      type: 'contextmenu',
+      field: fname,
+      target: targetDesc(el),
+      button: e.button,
+      pointerType: null,
+      trusted: !!e.isTrusted,
+      x: e.clientX,
+      y: e.clientY
+    });
+    if (!onForm) { save(); return; }
+    var rec = fieldRec(el);
     var recent = [];
     var log = page.pointerDownLog || [];
     var i;
@@ -580,20 +709,36 @@
         at: t,
         trusted: !!e.isTrusted,
         button: e.button,
-        /* Sanity: did pointerdown fire before menu, and with what button? */
         recentPointerDowns: recent
       });
     }
+    if (rec.pointerStream.length < 120) {
+      rec.pointerStream.push({ at: t, type: 'contextmenu', button: e.button, trusted: !!e.isTrusted });
+    }
     save();
   }, true);
-  addEventListener('pointerdown', function (e) {
-    if (!isFormControl(e.target)) return;
+  function recordPointerDown(e) {
     var el = e.target;
-    var rec = fieldRec(el);
+    var onForm = isFormControl(el);
     var t = Date.now() - T0;
-    var fname = el.name || el.id || el.type || 'field';
-    rec.pointerDownCount = (rec.pointerDownCount || 0) + 1;
+    var fname = onForm ? (el.name || el.id || el.type || 'field') : null;
     var ptr = {
+      at: t,
+      type: 'pointerdown',
+      field: fname,
+      target: targetDesc(el),
+      button: e.button,
+      pointerType: e.pointerType || null,
+      pointerId: e.pointerId,
+      trusted: !!e.isTrusted,
+      x: e.clientX,
+      y: e.clientY
+    };
+    pushPointerStream(ptr);
+    if (!onForm) { save(); return; }
+    var rec = fieldRec(el);
+    rec.pointerDownCount = (rec.pointerDownCount || 0) + 1;
+    var logPtr = {
       at: t,
       field: fname,
       button: e.button,
@@ -601,18 +746,35 @@
       pointerId: e.pointerId,
       trusted: !!e.isTrusted
     };
-    if (page.pointerDownLog.length < 80) page.pointerDownLog.push(ptr);
+    if (page.pointerDownLog.length < 120) page.pointerDownLog.push(logPtr);
     if (e.button === 2) {
-      if (rec.pointerDownRight.length < 40) rec.pointerDownRight.push(ptr);
+      if (rec.pointerDownRight.length < 40) rec.pointerDownRight.push(logPtr);
     }
-    /* Raw hold capture for iOS long-press hypothesis — no consumer yet. */
-    if (rec.openPointerDowns.length < 20) rec.openPointerDowns.push(ptr);
+    if (rec.openPointerDowns.length < 20) rec.openPointerDowns.push(logPtr);
+    if (rec.pointerStream.length < 120) rec.pointerStream.push(ptr);
     save();
-  }, true);
-  addEventListener('pointerup', function (e) {
-    if (!isFormControl(e.target)) return;
-    var rec = fieldRec(e.target);
+  }
+  function recordPointerUp(e) {
+    var el = e.target;
+    var onForm = isFormControl(el);
     var t = Date.now() - T0;
+    var fname = onForm ? (el.name || el.id || el.type || 'field') : null;
+    var upEntry = {
+      at: t,
+      type: 'pointerup',
+      field: fname,
+      target: targetDesc(el),
+      button: e.button,
+      pointerType: e.pointerType || null,
+      pointerId: e.pointerId,
+      trusted: !!e.isTrusted,
+      x: e.clientX,
+      y: e.clientY
+    };
+    pushPointerStream(upEntry);
+    if (!onForm) { save(); return; }
+    var rec = fieldRec(el);
+    if (rec.pointerStream.length < 120) rec.pointerStream.push(upEntry);
     var open = rec.openPointerDowns || [];
     var matchIdx = -1;
     var i;
@@ -623,7 +785,7 @@
       }
     }
     if (matchIdx < 0 && open.length) matchIdx = open.length - 1;
-    if (matchIdx < 0) return;
+    if (matchIdx < 0) { save(); return; }
     var down = open.splice(matchIdx, 1)[0];
     if (rec.pointerHolds.length < 80) {
       rec.pointerHolds.push({
@@ -634,6 +796,31 @@
         pointerType: down.pointerType || e.pointerType || null,
         trusted: !!e.isTrusted
       });
+    }
+    save();
+  }
+  addEventListener('pointerdown', recordPointerDown, true);
+  addEventListener('pointerup', recordPointerUp, true);
+  addEventListener('click', function (e) {
+    var t = Date.now() - T0;
+    var el = e.target;
+    var onForm = isFormControl(el);
+    var fname = onForm ? (el.name || el.id || el.type || 'field') : null;
+    var entry = {
+      at: t,
+      type: 'click',
+      field: fname,
+      target: targetDesc(el),
+      button: e.button,
+      pointerType: null,
+      trusted: !!e.isTrusted,
+      x: e.clientX,
+      y: e.clientY
+    };
+    pushPointerStream(entry);
+    if (onForm) {
+      var rec = fieldRec(el);
+      if (rec.pointerStream.length < 120) rec.pointerStream.push(entry);
     }
     save();
   }, true);
@@ -679,7 +866,8 @@
       disqualifyReasons: []
     };
     try { detail.valueBefore = String(el.value || ''); } catch (err) {}
-    attachPasteDisqualify(rec, detail, t);
+    var fname = el.name || el.id || el.type || 'field';
+    attachGestureAnalysis(rec, detail, t, fname);
     if (rec.pasteDetails.length < 20) rec.pasteDetails.push(detail);
     /* Masks/controlled often rewrite async after paste; sample twice.
      * Typing-sim may still be rewriting at 50ms — also sample late. */
