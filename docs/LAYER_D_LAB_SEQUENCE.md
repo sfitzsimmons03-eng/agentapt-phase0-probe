@@ -469,11 +469,13 @@ Retrieval: `__probeSave('tag')` / `__probeReset()` before clean arms. Prefer **f
 `not-agent-necessary-fail` | `not-agent-disqualifier` | `inconclusive`.  
 **`inconclusive` is the ceiling by design** — never store a positive “agent detected” without an explicit ticket + migration. Do not widen the CHECK “just in case.”
 
-**Applied on scanner Supabase (2026-08-15):** RLS on both tables (no permissive policies; service_role only). Trigger enforces `merchant_id = site_key` for `site_id`. Seed Harbour Lane Phase 0 in. Worker also asserts `merchantId === site.site_key` before insert (clean 4xx).
+**Applied on scanner Supabase (2026-08-15):** RLS on both tables (no permissive policies; service_role only). Trigger enforces `merchant_id = site_key` for `site_id`. Seed Harbour Lane Phase 0 in. Route asserts `merchantId === site.site_key` before insert (clean 4xx).
 
-**Code:** `beacon/sql/001_beacon.sql`, `beacon/src/index.ts` (`POST /v1/beacon`), probe v16 emit, Render inject via `BEACON_SITE_KEY` + `BEACON_ENDPOINT`.
+**Phase 0 emit path (secret never in page):** `probe.js` → same-origin `POST /api/beacon` on Render → server stamps `merchantId` from env, adds `x-beacon-secret`, forwards to scanner `POST /api/public/beacon`. Page inject: `{ siteKey, endpoint: "/api/beacon" }` only.
 
-**Deploy left:** Worker + Render env (Fitz). Then Harbour Lane pipe proof: happy path, replay, reject.
+**Code:** `beacon/sql/001_beacon.sql`, `beacon/src/index.ts` (validation contract for scanner port @ `21cfa62`), probe v16 emit, `server.js` `/api/beacon` forward.
+
+**Deploy left:** scanner `/api/public/beacon` route (Claude) + Render `BEACON_SITE_KEY` / `BEACON_UPSTREAM` / `BEACON_INGEST_SECRET`. Then Harbour Lane pipe proof: happy path, replay (`200` + `duplicate: true` ok), reject.
 
 ---
 

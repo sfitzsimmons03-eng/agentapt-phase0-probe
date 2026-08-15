@@ -23,8 +23,20 @@ if (!Number.isFinite(PORT) || PORT <= 0) {
 }
 
 const PROBE_LOG_KEY = process.env.PROBE_LOG_KEY || "phase0-change-me";
+/** Issued site key — identity. Injected into page; also stamped on forward. */
 const BEACON_SITE_KEY = process.env.BEACON_SITE_KEY || "";
-const BEACON_ENDPOINT = process.env.BEACON_ENDPOINT || "";
+/**
+ * Scanner ingest URL, e.g. https://<host>/api/public/beacon
+ * Server-to-server only — never injected into the page.
+ */
+const BEACON_UPSTREAM = process.env.BEACON_UPSTREAM || process.env.BEACON_ENDPOINT || "";
+/**
+ * Shared write credential for scanner route (x-beacon-secret).
+ * Render env only — never in page source.
+ */
+const BEACON_INGEST_SECRET = process.env.BEACON_INGEST_SECRET || "";
+const BEACON_FORWARD_ENABLED =
+  Boolean(BEACON_SITE_KEY) && Boolean(BEACON_UPSTREAM) && Boolean(BEACON_INGEST_SECRET);
 const MAX_LOG = 5_000;
 
 /** @type {Array<{ t: string, ms: number, method: string, path: string, ua: string|null, ip: string|null, referer: string|null }>} */
@@ -61,7 +73,61 @@ app.use((req, res, next) => {
 });
 
 app.get("/health", (_req, res) => {
-  res.json({ ok: true, startedAt, logCount: requestLog.length });
+  res.json({
+    ok: true,
+    startedAt,
+    logCount: requestLog.length,
+    beaconForward: BEACON_FORWARD_ENABLED,
+  });
+});
+
+/**
+ * Same-origin beacon ingest for probe.js.
+ * Page never sees BEACON_INGEST_SECRET. Probe stamps merchantId and forwards
+ * server-to-server to the scanner /api/public/beacon with x-beacon-secret.
+ */
+app.post("/api/beacon", express.json({ limit: "64kb" }), async (req, res) => {
+  if (!BEACON_FORWARD_ENABLED) {
+    res.status(503).json({ ok: false, error: "beacon forward not configured" });
+    return;
+  }
+
+  const body = req.body;
+  if (!body || typeof body !== "object") {
+    res.status(400).json({ ok: false, error: "body must be an object" });
+    return;
+  }
+
+  // Stamp identity from server env — browser cannot pick another merchant.
+  const payload = {
+    ...body,
+    merchantId: BEACON_SITE_KEY,
+  };
+
+  try {
+    const upstream = await fetch(BEACON_UPSTREAM, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-beacon-secret": BEACON_INGEST_SECRET,
+      },
+      body: JSON.stringify(payload),
+    });
+    const text = await upstream.text();
+    let data;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = { ok: false, error: "upstream non-JSON", raw: text.slice(0, 200) };
+    }
+    res.status(upstream.status).json(data);
+  } catch (err) {
+    res.status(502).json({
+      ok: false,
+      error: "upstream unreachable",
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
 });
 
 /**
@@ -121,14 +187,14 @@ app.get("/favicon.ico", (_req, res) => {
 });
 
 /**
- * Checkout pages: inject beacon config when BEACON_SITE_KEY + BEACON_ENDPOINT
- * are set. Site key is an issued merchant id (not a domain hash).
+ * Checkout pages: inject beacon config when forward path is configured.
+ * Page only gets siteKey + same-origin /api/beacon — never the ingest secret.
  */
 function beaconBootstrapScript() {
-  if (!BEACON_SITE_KEY || !BEACON_ENDPOINT) return "";
+  if (!BEACON_FORWARD_ENABLED) return "";
   const cfg = JSON.stringify({
     siteKey: BEACON_SITE_KEY,
-    endpoint: BEACON_ENDPOINT,
+    endpoint: "/api/beacon",
   });
   return `<script>window.__AGENTAPT_BEACON__=${cfg};</script>\n`;
 }
@@ -171,4 +237,5 @@ app.listen(PORT, () => {
   console.log(`agentapt-phase0-probe listening on PORT=${PORT}`);
   console.log(`health: /health`);
   console.log(`request log: /probe-log?key=…`);
+  console.log(`beacon forward: ${BEACON_FORWARD_ENABLED ? "ON → /api/beacon" : "off"}`);
 });
