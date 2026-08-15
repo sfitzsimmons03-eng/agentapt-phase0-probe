@@ -314,6 +314,16 @@ export default {
     }
     const site = siteLookup.site;
 
+    // Defence in depth: merchant_id must equal the looked-up site_key.
+    // Postgres trigger also enforces this; Worker returns a clean 4xx first.
+    if (body.merchantId !== site.site_key) {
+      return json(
+        { ok: false, error: "merchantId does not match site key" },
+        400,
+        corsHeaders(reqOrigin, false),
+      );
+    }
+
     // Identity is site_key. Origin is a check, not identity.
     const eventOrigin = body.page.origin;
     const headerOriginOk = !reqOrigin || originAllowed(site, reqOrigin);

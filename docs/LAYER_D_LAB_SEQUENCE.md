@@ -1,9 +1,9 @@
 # Layer D — Lab sequence (form-fill signature)
 
-**Status:** Layer D **closed**. Gesture disqualifier **shipped** (v15). Beacon first slice **in repo** (`beacon/` Worker + SQL) — deploy to scanner Supabase + Cloudflare next. Harbour Lane only (Phase 0).  
+**Status:** Layer D **closed**. Beacon SQL **applied** (RLS + merchant↔site trigger). Worker/Render deploy pending Fitz. Probe v16 ready for pipe proof.  
 **Harness:** [agentapt-phase0-probe](https://github.com/sfitzsimmons03-eng/agentapt-phase0-probe) · live `https://probe.agentapt.tech`  
 **Probe:** `probe.js` **v16** — Layer D verdict + optional beacon POST when `__AGENTAPT_BEACON__` is injected.  
-**Date:** 2026-08-14  
+**Date:** 2026-08-15  
 
 **iPhone — CLOSED, do not re-ask:** Antonello has an iPhone. **iOS long-press paste arm completed 2026-08-12** (Safari, plain checkout). Capture file: `ios_long_paste.json`. Result: paste 5/5, unattr 0, no `contextmenu`, verdict INCONCLUSIVE under **current** rule; `pointerHolds` long dwell ~842–1079 ms recorded raw. Proposed fix: gesture disqualifier (§4b′). No further iPhone availability question unless a *new* iOS arm is spec'd.
 
@@ -465,9 +465,15 @@ Retrieval: `__probeSave('tag')` / `__probeReset()` before clean arms. Prefer **f
 | schemaVersion | Required on every event (`1`) |
 | Counters | Stored with verdict (re-derivable) |
 
+**Verdict CHECK (product rule, not just validation):** only  
+`not-agent-necessary-fail` | `not-agent-disqualifier` | `inconclusive`.  
+**`inconclusive` is the ceiling by design** — never store a positive “agent detected” without an explicit ticket + migration. Do not widen the CHECK “just in case.”
+
+**Applied on scanner Supabase (2026-08-15):** RLS on both tables (no permissive policies; service_role only). Trigger enforces `merchant_id = site_key` for `site_id`. Seed Harbour Lane Phase 0 in. Worker also asserts `merchantId === site.site_key` before insert (clean 4xx).
+
 **Code:** `beacon/sql/001_beacon.sql`, `beacon/src/index.ts` (`POST /v1/beacon`), probe v16 emit, Render inject via `BEACON_SITE_KEY` + `BEACON_ENDPOINT`.
 
-**Deploy (human):** apply SQL → seed site_key → `wrangler secret` + deploy → set Render env → fill checkout → row in `beacon_events`.
+**Deploy left:** Worker + Render env (Fitz). Then Harbour Lane pipe proof: happy path, replay, reject.
 
 ---
 
