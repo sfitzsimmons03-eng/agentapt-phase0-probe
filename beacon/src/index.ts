@@ -36,6 +36,8 @@ interface BeaconEventBody {
     longTouchHoldCount?: number;
     verdict: Verdict;
   };
+  /** navigator.webdriver at emit. Optional. Not a source_class. */
+  webdriver?: boolean | null;
 }
 
 interface SiteRow {
@@ -151,6 +153,11 @@ function parseBody(raw: unknown): { ok: true; value: BeaconEventBody } | { ok: f
     return v;
   };
 
+  let webdriver: boolean | null | undefined;
+  if (o.webdriver === true || o.webdriver === false) webdriver = o.webdriver;
+  else if (o.webdriver === null) webdriver = null;
+  /* Ignore client source_class — classification is server-side only. */
+
   return {
     ok: true,
     value: {
@@ -171,6 +178,7 @@ function parseBody(raw: unknown): { ok: true; value: BeaconEventBody } | { ok: f
         longTouchHoldCount: optCount(d.longTouchHoldCount),
         verdict: d.verdict as Verdict,
       },
+      webdriver,
     },
   };
 }
@@ -229,6 +237,8 @@ async function insertEvent(
     pointer_right_count_in_fill: body.layerD.pointerRightCountInFill ?? null,
     long_touch_hold_count: body.layerD.longTouchHoldCount ?? null,
     verdict: body.layerD.verdict,
+    webdriver: body.webdriver ?? null,
+    /* source_class omitted — DB default NULL. Never accept from client. */
   };
 
   const url = `${env.SUPABASE_URL.replace(/\/$/, "")}/rest/v1/beacon_events`;

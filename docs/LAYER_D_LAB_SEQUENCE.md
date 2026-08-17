@@ -2,7 +2,7 @@
 
 **Status:** Layer D **closed**. **§7 accepted 2026-08-17** — collector unblocked against these bounds. Beacon pipe **proven** (scanner route + Render forwarder). No Phase 0 kill-gate ticket remaining (Atlas sunset; Comet DOM struck on hosted retest).  
 **Harness:** [agentapt-phase0-probe](https://github.com/sfitzsimmons03-eng/agentapt-phase0-probe) · live `https://probe.agentapt.tech`  
-**Probe:** `probe.js` **v16** — Layer D verdict + same-origin `POST /api/beacon` (Render stamps merchantId + ingest secret).  
+**Probe:** `probe.js` **v17** — Layer D verdict + same-origin `POST /api/beacon` (Render stamps merchantId + ingest secret). Optional `webdriver` on the beacon payload. `source_class` is server-side only (NULL until correlation).  
 **Date:** 2026-08-17  
 
 **iPhone — CLOSED, do not re-ask:** Antonello has an iPhone. **iOS long-press paste arm completed 2026-08-12** (Safari, plain checkout). Capture file: `ios_long_paste.json`. Result: paste 5/5, unattr 0, no `contextmenu`, verdict INCONCLUSIVE under **current** rule; `pointerHolds` long dwell ~842–1079 ms recorded raw. Proposed fix: gesture disqualifier (§4b′). No further iPhone availability question unless a *new* iOS arm is spec'd.
@@ -448,7 +448,7 @@ Note: clipboard values in this run were the probe version-check snippet pasted i
 | https://probe.agentapt.tech/checkout-controlled.html | React controlled + ZIP/phone rewrite |
 | https://probe.agentapt.tech/checkout-typing-sim.html | Paste → synthetic per-char keydowns |
 
-Retrieval: `__probeSave('tag')` / `__probeReset()` before clean arms. Prefer **fresh tab**; sessionStorage accumulates historical pages. Confirm `probe.js?v=16`. Beacon: `__probeBeacon()` when Harbour Lane has `BEACON_*` env injected.
+Retrieval: `__probeSave('tag')` / `__probeReset()` before clean arms. Prefer **fresh tab**; sessionStorage accumulates historical pages. Confirm `probe.js?v=17`. Beacon: `__probeBeacon()` when Harbour Lane has `BEACON_*` env injected. Payload may include `webdriver`; never `source_class`.
 
 ---
 
@@ -513,9 +513,11 @@ Retrieval: `__probeSave('tag')` / `__probeReset()` before clean arms. Prefer **f
 
 **Phase 0 emit path (secret never in page):** `probe.js` → same-origin `POST /api/beacon` on Render → server stamps `merchantId` from env, adds `x-beacon-secret`, forwards to scanner `POST /api/public/beacon`. Page inject: `{ siteKey, endpoint: "/api/beacon" }` only — `siteKey` on the page is vestigial; identity is the Render env stamp.
 
-**Code:** `beacon/sql/001_beacon.sql`, `beacon/src/index.ts` (validation contract for scanner port @ `21cfa62`), probe v16 emit, `server.js` `/api/beacon` forward.
+**Code:** `beacon/sql/001_beacon.sql`, `beacon/sql/003_source_class.sql`, `beacon/src/index.ts` (validation contract for scanner port @ `21cfa62`), probe v17 emit (`webdriver` optional), `server.js` `/api/beacon` forward.
 
 **Deploy — done 2026-08-17.** Scanner `POST https://agentapt.io/api/public/beacon` live and preflighted. Render env set (site key + ingest secret rotated). Forwarder proof: happy path, replay, bad verdict, empty body (auth then schema), invalid JSON. Rotate proof `antonello-rotate-001` → `eb6add4c-d02d-40c1-8bfe-936a052d374e` under new merchant_id, `origin_mismatch: false`; replay **200** with **`replay: true`** (not `duplicate: true`). Old site-key row deactivated.
+
+**Self-scan pollution (schema, 2026-08-17 — detector later).** Own Browserbase/Playwright scans will fire merchant beacon events. Do not mark the driver (no UA suffix, query param, injected global). Add nullable `source_class` on `beacon_events` from day one (NULL = unclassified). Orthogonal to `verdict`; do not widen `provenance`. Client must not set `source_class` — ingest ignores it. Optional payload field `webdriver` (`navigator.webdriver`) stored as `beacon_events.webdriver`. Later detector: correlate `origin` host + `occurred_at` against `sandbox_runs` window; err toward first-party. Apply `003_source_class.sql` on scanner Supabase **before** the route starts inserting `webdriver`.
 
 ---
 

@@ -1,9 +1,10 @@
-/* AgentApt Phase 0 probe harness — v16
+/* AgentApt Phase 0 probe harness — v17
  * Local capture always. Optional Layer D beacon POST when
  * window.__AGENTAPT_BEACON__ = { siteKey, endpoint } is set (Harbour Lane Phase 0).
  * No PII in beacon payload — verdict + counters only.
  * Must be loaded SYNCHRONOUSLY in <head> before any other script.
- * v15 shipped unified gesture disqualifier; v16 adds beacon emit.
+ * v15 shipped unified gesture disqualifier; v16 adds beacon emit;
+ * v17 adds optional webdriver on the beacon payload (not source_class).
  */
 (function () {
   'use strict';
@@ -62,7 +63,7 @@
     layerD: null,
     pointerDownLog: [],
     pointerStream: [],
-    probeVersion: 16,
+    probeVersion: 17,
     beaconIdempotencyKey: null,
     beaconSentAt: null,
     beaconLastError: null
@@ -947,6 +948,16 @@
     if ((ld.longTouchHoldsInFill || []).length > 0) reasons.push('long-touch-hold');
     return reasons;
   }
+  function readWebdriver() {
+    try {
+      if (S.env && (S.env.webdriver === true || S.env.webdriver === false)) return S.env.webdriver;
+    } catch (e) {}
+    try {
+      return navigator.webdriver === true;
+    } catch (e2) {
+      return null;
+    }
+  }
   function buildBeaconPayload(cfg) {
     var ld = page.layerD;
     if (!ld) return null;
@@ -961,6 +972,7 @@
         origin: location.origin,
         path: PAGE
       },
+      webdriver: readWebdriver(),
       layerD: {
         pasteFields: ld.pasteFields || 0,
         unattributedKeydowns: ld.unattributedKeydowns || 0,
