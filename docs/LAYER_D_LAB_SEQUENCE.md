@@ -1,9 +1,9 @@
 # Layer D — Lab sequence (form-fill signature)
 
-**Status:** Layer D **closed**. Beacon SQL **applied** (RLS + merchant↔site trigger). Worker/Render deploy pending Fitz. Probe v16 ready for pipe proof.  
+**Status:** Layer D **closed**. **§7 accepted 2026-08-17** — collector unblocked against these bounds. Beacon pipe **proven** (scanner route + Render forwarder). No Phase 0 kill-gate ticket remaining (Atlas sunset; Comet DOM struck on hosted retest).  
 **Harness:** [agentapt-phase0-probe](https://github.com/sfitzsimmons03-eng/agentapt-phase0-probe) · live `https://probe.agentapt.tech`  
-**Probe:** `probe.js` **v16** — Layer D verdict + optional beacon POST when `__AGENTAPT_BEACON__` is injected.  
-**Date:** 2026-08-15  
+**Probe:** `probe.js` **v16** — Layer D verdict + same-origin `POST /api/beacon` (Render stamps merchantId + ingest secret).  
+**Date:** 2026-08-17  
 
 **iPhone — CLOSED, do not re-ask:** Antonello has an iPhone. **iOS long-press paste arm completed 2026-08-12** (Safari, plain checkout). Capture file: `ios_long_paste.json`. Result: paste 5/5, unattr 0, no `contextmenu`, verdict INCONCLUSIVE under **current** rule; `pointerHolds` long dwell ~842–1079 ms recorded raw. Proposed fix: gesture disqualifier (§4b′). No further iPhone availability question unless a *new* iOS arm is spec'd.
 
@@ -196,7 +196,7 @@ State explicitly. Do not pretend the rule covers them.
 
 **Bitwarden extension autofill (Arm G1):** paste **0/5**, unattr **10**, verdict **`not-agent-necessary-fail`**. Values arrived as **`input` with no `paste`** on every shared field. **Safe for humans today** — we under-report, not false-positive.
 
-**The real failure mode:** the necessary condition is **pinned to how current agent browsers happen to fill** (Comet pastes). If Comet, Atlas, or Kitesurf ships **input-only injection**, Layer D returns **`not-agent-necessary-fail` on a real agent** — we go blind without knowing we missed. This is a **false negative**, not a threshold problem; no retuning fixes it. Ticket must list explicitly (§7).
+**The real failure mode:** the necessary condition is **pinned to how current agent browsers happen to fill** (Comet pastes). If Comet or Kitesurf ships **input-only injection**, Layer D returns **`not-agent-necessary-fail` on a real agent** — we go blind without knowing we missed. Atlas is gone (OpenAI sunset 2026-08-09). This is a **false negative**, not a threshold problem; no retuning fixes it. §7 lists it; Comet cadence (below) is the detection plan.
 
 **Contrast with Maccy:** keyboard clipboard fails necessary on keydowns but **does** fire paste — different mechanism, different visibility.
 
@@ -245,7 +245,7 @@ State explicitly. Do not pretend the rule covers them.
 ### 4d. Out of scope but related
 
 - **Shopify web pixel:** no `document` → cannot run Layer D at all. Theme app embed (or equivalent page script) is the install path. Desk research; not an arm.
-- **Layers A/B/C:** UA grep / Atlas favicon / Comet DOM inject — separate verdicts; not part of this sequence.
+- **Layers A/B/C:** UA grep / Atlas favicon / Comet DOM inject — separate verdicts; **not part of this sequence.** Phase 0 kill-gate on B/C is **closed** (2026-08): Atlas sunset 9 Aug (OpenAI release notes); Comet hosted retest `resources: []`, no `overlay.js`, `globals.added` only probe helpers. Layer C is not entirely dead: `__codexPlaywrightInjected` remains a real injection artifact — covers **automation-driven** agents, not browser-native Comet.
 - **Windows arms (Fitz):** Ctrl+V, context-menu key, Win+V clipboard history — zero data; same v10 capture covers them. Do not run device arms until capture ships.
 
 ---
@@ -452,34 +452,9 @@ Retrieval: `__probeSave('tag')` / `__probeReset()` before clean arms. Prefer **f
 
 ---
 
-## 7a. Beacon first slice (Layer D ingest)
-
-**Parallel path.** Does not feed `agent-traffic/` / `ParsedRequest`. Contract: `Beacon_Ingest_Contract_v1.md` @ scanner `1126a20`.
-
-| Decision | Value |
-|----------|--------|
-| merchantId | Issued `site_key` (`beacon_sites`) |
-| Supabase | Scanner project, `beacon_*` tables |
-| Phase 0 origin | Harbour Lane only |
-| Event grain | One checkout fill session |
-| schemaVersion | Required on every event (`1`) |
-| Counters | Stored with verdict (re-derivable) |
-
-**Verdict CHECK (product rule, not just validation):** only  
-`not-agent-necessary-fail` | `not-agent-disqualifier` | `inconclusive`.  
-**`inconclusive` is the ceiling by design** — never store a positive “agent detected” without an explicit ticket + migration. Do not widen the CHECK “just in case.”
-
-**Applied on scanner Supabase (2026-08-15):** RLS on both tables (no permissive policies; service_role only). Trigger enforces `merchant_id = site_key` for `site_id`. Seed Harbour Lane Phase 0 in. Route asserts `merchantId === site.site_key` before insert (clean 4xx).
-
-**Phase 0 emit path (secret never in page):** `probe.js` → same-origin `POST /api/beacon` on Render → server stamps `merchantId` from env, adds `x-beacon-secret`, forwards to scanner `POST /api/public/beacon`. Page inject: `{ siteKey, endpoint: "/api/beacon" }` only.
-
-**Code:** `beacon/sql/001_beacon.sql`, `beacon/src/index.ts` (validation contract for scanner port @ `21cfa62`), probe v16 emit, `server.js` `/api/beacon` forward.
-
-**Deploy left:** scanner `/api/public/beacon` route (Claude) + Render `BEACON_SITE_KEY` / `BEACON_UPSTREAM` / `BEACON_INGEST_SECRET`. Then Harbour Lane pipe proof: happy path, replay (`200` + `duplicate: true` ok), reject.
-
----
-
 ## 7. Ticket-ready summary
+
+**Accepted 2026-08-17.** That acceptance unblocks the collector. Build against these numbers and bounds as written, including the “do not” list.
 
 **Ship Layer D as page-tag behavioural fill detection** with:
 
@@ -506,9 +481,41 @@ Retrieval: `__probeSave('tag')` / `__probeReset()` before clean arms. Prefer **f
 
 **Input-only blind spot (ticket must state):** Layer D necessary conditions require paste. Input-only paths (Bitwarden, Chrome common) score **not-agent-necessary-fail** — safe for humans; **silent FN** if agents adopt input-only injection.
 
-**Do not:** raise raw keydown caps to swallow masks; move primary onto fill span; retune 2000ms lookback; treat Maccy/⌘V as the residual FP (it fails necessary conditions); read phone into the necessary shared-five sum; claim agent from paste+unattr alone; start collector before this contract is accepted.
+**Do not:** raise raw keydown caps to swallow masks; move primary onto fill span; retune 2000ms lookback; treat Maccy/⌘V as the residual FP (it fails necessary conditions); read phone into the necessary shared-five sum; claim agent from paste+unattr alone; widen the verdict CHECK with a positive “agent” value.
 
 **Tolerances (§1):** `>= 4 of 5` and `<= 3` unattributed are precautionary for keydown classes. All-context-menu humans land at 0 unattr — necessary conditions do not separate them; windowless session disqualifier does. See §1.
+
+**Committed alongside §7 (2026-08-17), not extra Layer D rule work:**
+
+1. **Driver baseline** — point Browserbase/Playwright/Stagehand at Harbour Lane checkout; capture Layer D signature. Labeled ground truth for Tier 3 automation; answers whether our driver pastes or types.
+2. **Comet cadence** — re-run the plain arm periodically and diff against stored baseline. Fill-mechanics change is a **product incident** (G3: same Chrome version, two autofill paths). Catches the §7 input-only FN if Comet ships it silently.
+
+---
+
+## 7a. Beacon first slice (Layer D ingest)
+
+**Parallel path.** Does not feed `agent-traffic/` / `ParsedRequest`. Contract: `Beacon_Ingest_Contract_v1.md` @ scanner `1126a20`.
+
+| Decision | Value |
+|----------|--------|
+| merchantId | Issued `site_key` (`beacon_sites`) |
+| Supabase | Scanner project, `beacon_*` tables |
+| Phase 0 origin | Harbour Lane only |
+| Event grain | One checkout fill session |
+| schemaVersion | Required on every event (`1`) |
+| Counters | Stored with verdict (re-derivable) |
+
+**Verdict CHECK (product rule, not just validation):** only  
+`not-agent-necessary-fail` | `not-agent-disqualifier` | `inconclusive`.  
+**`inconclusive` is the ceiling by design** — never store a positive “agent detected” without an explicit ticket + migration. Do not widen the CHECK “just in case.”
+
+**Applied on scanner Supabase (2026-08-15):** RLS on both tables (no permissive policies; service_role only). Trigger enforces `merchant_id = site_key` for `site_id`. Route asserts `merchantId === site.site_key` before insert (clean 4xx).
+
+**Phase 0 emit path (secret never in page):** `probe.js` → same-origin `POST /api/beacon` on Render → server stamps `merchantId` from env, adds `x-beacon-secret`, forwards to scanner `POST /api/public/beacon`. Page inject: `{ siteKey, endpoint: "/api/beacon" }` only — `siteKey` on the page is vestigial; identity is the Render env stamp.
+
+**Code:** `beacon/sql/001_beacon.sql`, `beacon/src/index.ts` (validation contract for scanner port @ `21cfa62`), probe v16 emit, `server.js` `/api/beacon` forward.
+
+**Deploy — done 2026-08-17.** Scanner `POST https://agentapt.io/api/public/beacon` live and preflighted. Render env set (site key + ingest secret rotated). Forwarder proof: happy path, replay, bad verdict, empty body (auth then schema), invalid JSON. Rotate proof `antonello-rotate-001` → `eb6add4c-d02d-40c1-8bfe-936a052d374e` under new merchant_id, `origin_mismatch: false`; replay **200** with **`replay: true`** (not `duplicate: true`). Old site-key row deactivated.
 
 ---
 
@@ -543,4 +550,4 @@ This can be done in the public playground and is useful even without agentic fil
 
 If UA is fully overridable, declaration is weak for this whole class. That answer matters more than whether the default string happens to self-identify. Would also be the first real declared-agent sample on non-OpenAI infrastructure; we still have no OpenAI-cloud Comet data (local Playwright only for one arm historically).
 
-**Status:** Watch list only. Layer D closed on rule shape; collector parked until sequencing allows.
+**Status:** Watch list only. Layer D rule **accepted 2026-08-17**. Collector unblocked; Kitesurf still not queued.
