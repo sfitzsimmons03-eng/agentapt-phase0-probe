@@ -1,10 +1,11 @@
-/* AgentApt Phase 0 probe harness — v17
+/* AgentApt Phase 0 probe harness — v18
  * Local capture always. Optional Layer D beacon POST when
  * window.__AGENTAPT_BEACON__ = { siteKey, endpoint } is set (Harbour Lane Phase 0).
  * No PII in beacon payload — verdict + counters only.
  * Must be loaded SYNCHRONOUSLY in <head> before any other script.
  * v15 shipped unified gesture disqualifier; v16 adds beacon emit;
- * v17 adds optional webdriver on the beacon payload (not source_class).
+ * v17 adds optional webdriver on the beacon payload (not source_class);
+ * v18 adds optional env fingerprint snapshot on the beacon payload.
  */
 (function () {
   'use strict';
@@ -63,7 +64,7 @@
     layerD: null,
     pointerDownLog: [],
     pointerStream: [],
-    probeVersion: 17,
+    probeVersion: 18,
     beaconIdempotencyKey: null,
     beaconSentAt: null,
     beaconLastError: null
@@ -958,6 +959,28 @@
       return null;
     }
   }
+  function buildBeaconEnv() {
+    var e = S.env;
+    if (!e) return undefined;
+    var out = {};
+    if (typeof e.pluginCount === 'number') out.pluginCount = e.pluginCount;
+    if (typeof e.hardwareConcurrency === 'number') out.hardwareConcurrency = e.hardwareConcurrency;
+    if (e.webgl && typeof e.webgl === 'object') {
+      if (typeof e.webgl.renderer === 'string') out.webglRenderer = e.webgl.renderer;
+      if (typeof e.webgl.vendor === 'string') out.webglVendor = e.webgl.vendor;
+    }
+    if (e.screen && typeof e.screen === 'object') {
+      out.screen = {
+        w: e.screen.w,
+        h: e.screen.h,
+        aw: e.screen.aw,
+        ah: e.screen.ah,
+        dpr: e.screen.dpr
+      };
+    }
+    var keys = Object.keys(out);
+    return keys.length ? out : undefined;
+  }
   function buildBeaconPayload(cfg) {
     var ld = page.layerD;
     if (!ld) return null;
@@ -973,6 +996,7 @@
         path: PAGE
       },
       webdriver: readWebdriver(),
+      env: buildBeaconEnv(),
       layerD: {
         pasteFields: ld.pasteFields || 0,
         unattributedKeydowns: ld.unattributedKeydowns || 0,

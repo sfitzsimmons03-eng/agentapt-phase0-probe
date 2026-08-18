@@ -38,6 +38,24 @@ interface BeaconEventBody {
   };
   /** navigator.webdriver at emit. Optional. Not a source_class. */
   webdriver?: boolean | null;
+  /** Client-reported fingerprint snapshot. Diagnostic only — not verdict input. */
+  env?: BeaconEnvSnapshot;
+}
+
+interface BeaconScreenSnapshot {
+  w: number;
+  h: number;
+  aw: number;
+  ah: number;
+  dpr: number;
+}
+
+interface BeaconEnvSnapshot {
+  pluginCount?: number;
+  hardwareConcurrency?: number;
+  webglRenderer?: string;
+  webglVendor?: string;
+  screen?: BeaconScreenSnapshot;
 }
 
 interface SiteRow {
@@ -100,6 +118,59 @@ function isInt(v: unknown): v is number {
   return typeof v === "number" && Number.isInteger(v) && Number.isFinite(v);
 }
 
+function parseBeaconEnv(raw: unknown): { ok: true; value: BeaconEnvSnapshot } | { ok: false; error: string } {
+  if (raw === undefined || raw === null) return { ok: true, value: {} };
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    return { ok: false, error: "env must be an object" };
+  }
+  const e = raw as Record<string, unknown>;
+  const out: BeaconEnvSnapshot = {};
+
+  if (e.pluginCount !== undefined && e.pluginCount !== null) {
+    if (!isInt(e.pluginCount) || e.pluginCount < 0 || e.pluginCount > 1000) {
+      return { ok: false, error: "env.pluginCount invalid" };
+    }
+    out.pluginCount = e.pluginCount;
+  }
+  if (e.hardwareConcurrency !== undefined && e.hardwareConcurrency !== null) {
+    if (!isInt(e.hardwareConcurrency) || e.hardwareConcurrency < 1 || e.hardwareConcurrency > 256) {
+      return { ok: false, error: "env.hardwareConcurrency invalid" };
+    }
+    out.hardwareConcurrency = e.hardwareConcurrency;
+  }
+  if (e.webglRenderer !== undefined && e.webglRenderer !== null) {
+    if (typeof e.webglRenderer !== "string" || e.webglRenderer.length > 512) {
+      return { ok: false, error: "env.webglRenderer invalid" };
+    }
+    out.webglRenderer = e.webglRenderer.trim();
+  }
+  if (e.webglVendor !== undefined && e.webglVendor !== null) {
+    if (typeof e.webglVendor !== "string" || e.webglVendor.length > 256) {
+      return { ok: false, error: "env.webglVendor invalid" };
+    }
+    out.webglVendor = e.webglVendor.trim();
+  }
+  if (e.screen !== undefined && e.screen !== null) {
+    if (typeof e.screen !== "object" || Array.isArray(e.screen)) {
+      return { ok: false, error: "env.screen invalid" };
+    }
+    const s = e.screen as Record<string, unknown>;
+    const nums = ["w", "h", "aw", "ah", "dpr"] as const;
+    const screen: Partial<BeaconScreenSnapshot> = {};
+    for (const k of nums) {
+      const v = s[k];
+      if (v === undefined || v === null) continue;
+      if (typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > 100000) {
+        return { ok: false, error: `env.screen.${k} invalid` };
+      }
+      screen[k] = v;
+    }
+    if (Object.keys(screen).length > 0) out.screen = screen as BeaconScreenSnapshot;
+  }
+
+  return { ok: true, value: out };
+}
+
 function parseBody(raw: unknown): { ok: true; value: BeaconEventBody } | { ok: false; error: string } {
   if (!raw || typeof raw !== "object") return { ok: false, error: "body must be an object" };
   const o = raw as Record<string, unknown>;
@@ -158,6 +229,13 @@ function parseBody(raw: unknown): { ok: true; value: BeaconEventBody } | { ok: f
   else if (o.webdriver === null) webdriver = null;
   /* Ignore client source_class — classification is server-side only. */
 
+  let envSnapshot: BeaconEnvSnapshot | undefined;
+  if (o.env !== undefined) {
+    const envParsed = parseBeaconEnv(o.env);
+    if (!envParsed.ok) return envParsed;
+    if (Object.keys(envParsed.value).length > 0) envSnapshot = envParsed.value;
+  }
+
   return {
     ok: true,
     value: {
@@ -179,6 +257,7 @@ function parseBody(raw: unknown): { ok: true; value: BeaconEventBody } | { ok: f
         verdict: d.verdict as Verdict,
       },
       webdriver,
+      env: envSnapshot,
     },
   };
 }
@@ -238,6 +317,7 @@ async function insertEvent(
     long_touch_hold_count: body.layerD.longTouchHoldCount ?? null,
     verdict: body.layerD.verdict,
     webdriver: body.webdriver ?? null,
+    env: body.env ?? null,
     /* source_class omitted — DB default NULL. Never accept from client. */
   };
 

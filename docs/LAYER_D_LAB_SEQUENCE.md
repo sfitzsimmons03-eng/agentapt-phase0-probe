@@ -2,7 +2,7 @@
 
 **Status:** Layer D **closed**. **§7 accepted 2026-08-17** — collector unblocked against these bounds. Beacon pipe **proven** (scanner route + Render forwarder). No Phase 0 kill-gate ticket remaining (Atlas sunset; Comet DOM struck on hosted retest).  
 **Harness:** [agentapt-phase0-probe](https://github.com/sfitzsimmons03-eng/agentapt-phase0-probe) · live `https://probe.agentapt.tech`  
-**Probe:** `probe.js` **v17** — Layer D verdict + same-origin `POST /api/beacon` (Render stamps merchantId + ingest secret). Optional `webdriver` on the beacon payload. `source_class` is server-side only (NULL until correlation).  
+**Probe:** `probe.js` **v18** — Layer D verdict + same-origin `POST /api/beacon`. Optional `webdriver` + optional `env` fingerprint on beacon payload (diagnostic only). `source_class` server-side only.  
 **Date:** 2026-08-17  
 
 **iPhone — CLOSED, do not re-ask:** Antonello has an iPhone. **iOS long-press paste arm completed 2026-08-12** (Safari, plain checkout). Capture file: `ios_long_paste.json`. Result: paste 5/5, unattr 0, no `contextmenu`, verdict INCONCLUSIVE under **current** rule; `pointerHolds` long dwell ~842–1079 ms recorded raw. Proposed fix: gesture disqualifier (§4b′). No further iPhone availability question unless a *new* iOS arm is spec'd.
@@ -513,7 +513,7 @@ Retrieval: `__probeSave('tag')` / `__probeReset()` before clean arms. Prefer **f
 
 **Phase 0 emit path (secret never in page):** `probe.js` → same-origin `POST /api/beacon` on Render → server stamps `merchantId` from env, adds `x-beacon-secret`, forwards to scanner `POST /api/public/beacon`. Page inject: `{ siteKey, endpoint: "/api/beacon" }` only — `siteKey` on the page is vestigial; identity is the Render env stamp.
 
-**Code:** `beacon/sql/001_beacon.sql`, `beacon/sql/003_source_class.sql`, `beacon/src/index.ts` (validation contract for scanner port @ `21cfa62`), probe v17 emit (`webdriver` optional), `server.js` `/api/beacon` forward.
+**Code:** `beacon/sql/001_beacon.sql`, `beacon/sql/003_source_class.sql`, `beacon/sql/004_env.sql`, `beacon/src/index.ts` (validation contract for scanner port), probe v18 emit (`webdriver` + optional `env`), `server.js` `/api/beacon` forward.
 
 **Deploy — done 2026-08-17.** Scanner `POST https://agentapt.io/api/public/beacon` live and preflighted. Render env set (site key + ingest secret rotated). Forwarder proof: happy path, replay, bad verdict, empty body (auth then schema), invalid JSON. Rotate proof `antonello-rotate-001` → `eb6add4c-d02d-40c1-8bfe-936a052d374e` under new merchant_id, `origin_mismatch: false`; replay **200** with **`replay: true`** (not `duplicate: true`). Old site-key row deactivated.
 
